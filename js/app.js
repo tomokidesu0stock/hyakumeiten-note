@@ -635,7 +635,7 @@ function renderMap(){
   function showOsmCard(p){
     var card=$('#mapCard'); card.hidden=false; var c=OSM.CATS[p.cat]||OSM.CATS.o, d=S.pos?dist(S.pos,p):null;
     card.innerHTML='<div class="eyebrow" style="color:var(--muted);font-size:10px"><span class="osm-dot" style="--c:'+c.color+'"></span>'+esc(c.label)+(p.cu?' · '+esc(p.cu):'')+'</div>'+
-      '<div class="r"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', p.addr, p.h?'営業 '+p.h:''].filter(Boolean).join(' · '))+'</div></div><button class="btn sm" id="ocRate">記録する</button></div>'+
+      '<div class="r"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', p.addr, p.h?'営業 '+OSM.hoursJa(p.h):''].filter(Boolean).join(' · '))+'</div></div><button class="btn sm" id="ocRate">記録する</button></div>'+
       '<div style="display:flex;gap:8px"><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.gmapsURL(p)+'">Googleマップ</a><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.tabelogURL(p)+'">食べログで検索</a></div>';
     $('#ocRate').onclick=function(){ adoptOsm(p).then(function(id){ openDetail(id); openRate(id); }); };
   }
@@ -666,7 +666,7 @@ function adoptOsm(p){
   var id='osm-'+p.id;
   if (p.st && findStore(p.st)) return Promise.resolve(p.st);
   if (findStore(id)) return Promise.resolve(id);
-  var ns={id:id, name:p.name, pref:prefFromLatLng(p.lat,p.lng), area:p.addr||'', address:p.addr||'', lat:p.lat, lng:p.lng, approx:false, closed:'', genre:(window.OSM.CATS[p.cat]||{}).label||'', hours:p.h||'', list:'free', src:'osm'};
+  var ns={id:id, name:p.name, pref:prefFromLatLng(p.lat,p.lng), area:p.addr||'', address:p.addr||'', lat:p.lat, lng:p.lng, approx:false, closed:'', genre:(window.OSM.CATS[p.cat]||{}).label||'', hours:window.OSM.hoursJa(p.h||''), list:'free', src:'osm'};
   return DB.put('stores',ns).then(function(){ S.custom.push(ns); return id; });
 }
 function prefFromLatLng(lat,lng){ if (lat>35.4&&lat<35.95&&lng>138.9&&lng<140) return '東京都'; if (lat>34.7&&lat<35.8&&lng>134.8&&lng<136.1) return '京都府'; if (lat>33.7&&lat<35.3&&lng>135.8&&lng<136.99) return '三重県'; return '未設定'; }
@@ -806,7 +806,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.4.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店: © OpenStreetMap contributors（ODbL、OpenFreeMap経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.4.1</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
     '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();

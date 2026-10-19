@@ -35,7 +35,7 @@ CHAIN = [
     ('f', r'マクドナルド|mcdonald|モスバーガー|mos ?burger|ケンタッキー|kfc|ロッテリア|フレッシュネス|バーガーキング|burger king|サブウェイ|subway|ファーストキッチン|ウェンディーズ|wendy|ドミノ|ピザーラ|ピザハット|銀だこ'),
     ('i', r'鳥貴族|鳥メロ|串カツ田中|磯丸水産|白木屋|笑笑|魚民|(?<!焼肉の)和民|わたみ|庄や|天狗|つぼ八|塚田農場|八剣伝|や台ずし|金の蔵'),
     ('w', r'丸亀製麺|はなまるうどん|富士そば|小諸そば|ゆで太郎|大戸屋|やよい軒|ねぎし|木曽路|かごの屋|華屋与兵衛|和食さと|がってん寿司|スシロー|くら寿司|かっぱ寿司|はま寿司|銚子丸|魚べい|元気寿司|かに道楽|甲羅|松のや|かつや|さぼてん|とんでん|夢庵|藍屋|てんや'),
-    ('r', r'一風堂|来来亭|リンガーハット|afuri|武蔵家|蒙古タンメン|天一|一蘭|ばんから|花月嵐|ちゃんぽん'),
+    ('r', r'福しん|日高屋|一風堂|来来亭|リンガーハット|afuri|武蔵家|蒙古タンメン|天一|一蘭|ばんから|花月嵐|ちゃんぽん'),
     ('a', r'牛角|安楽亭|叙々苑|焼肉ライク|ワンカルビ|ココイチ|coco壱|ゴーゴーカレー|バーミヤン|大阪王将|王将|珍来'),
     ('y', r'ペッパーランチ|いきなりステーキ|びっくりドンキー|ビッグボーイ|big boy|tony roma|kua.?aina|ジョリーパスタ|洋麺屋|五右衛門(?!ラーメン)|鎌倉パスタ'),
     ('s', r'レオニダス|ゴディバ|godiva|不二家(?!レストラン)|シャトレーゼ|コージーコーナー|ピエール.?エルメ'),
@@ -58,6 +58,26 @@ CUISINE = {  # Overpass の cuisine → ジャンル・表示名
     'chinese': ('a', '中華'), 'korean': ('a', '韓国'), 'indian': ('a', 'インド'), 'curry': ('a', 'カレー'), 'thai': ('a', 'タイ'), 'vietnamese': ('a', 'ベトナム'),
     'nepalese': ('a', 'ネパール'), 'asian': ('a', 'アジア'), 'yakiniku': ('a', '焼肉'), 'italian': ('y', 'イタリアン'), 'french': ('y', 'フレンチ'),
     'pizza': ('y', 'ピザ'), 'burger': ('y', 'ハンバーガー'), 'steak_house': ('y', 'ステーキ'), 'spanish': ('y', 'スペイン'), 'western': ('y', '洋食'),
+    'barbecue': ('a', '焼肉'), 'beef_bowl': ('w', '牛丼'), 'chicken': ('w', '鶏料理'), 'savory_pancakes': ('w', 'お好み焼き'), 'regional': ('w', '郷土料理'),
+    'pasta': ('y', 'パスタ'), 'fish': ('w', '魚料理'), 'seafood': ('w', '海鮮'), 'sandwich': ('f', 'サンド'), 'donut': ('s', 'ドーナツ'), 'friture': ('f', '揚げ物'),
+    'mexican': ('a', 'メキシコ'), 'american': ('y', 'アメリカン'), 'takoyaki': ('f', 'たこ焼き'), 'tea': ('c', 'お茶'), 'taiwanese': ('a', '台湾'),
+    'german': ('y', 'ドイツ'), 'steak': ('y', 'ステーキ'), 'bubble_tea': ('c', 'タピオカ'), 'fried_food': ('w', '揚げ物'), 'gyoza': ('a', '餃子'),
+    'kebab': ('a', 'ケバブ'), 'turkish': ('a', 'トルコ'), 'crepe': ('s', 'クレープ'), 'coffee': ('c', 'コーヒー'), 'tantanmen': ('r', '担々麺'),
+    'teppanyaki': ('w', '鉄板焼き'), 'fried_chicken': ('f', 'からあげ'), 'hot_dog': ('f', 'ホットドッグ'), 'pancake': ('s', 'パンケーキ'),
+    'kushikatsu': ('i', '串カツ'), 'kushiage': ('i', '串揚げ'), 'oden': ('w', 'おでん'), 'shabu-shabu': ('w', 'しゃぶしゃぶ'), 'sukiyaki': ('w', 'すき焼き'),
+    'tonkotsu': ('r', 'とんこつ'), 'gyutan': ('w', '牛たん'), 'motsunabe': ('w', 'もつ鍋'), 'tapas': ('y', 'タパス'), 'greek': ('y', 'ギリシャ'),
+    'sri_lankan': ('a', 'スリランカ'), 'indonesian': ('a', 'インドネシア'), 'malaysian': ('a', 'マレーシア'), 'filipino': ('a', 'フィリピン'),
+    'chinese_noodle': ('r', '中華そば'), 'tsukemen': ('r', 'つけ麺'), 'dumpling': ('a', '餃子'), 'bagel': ('s', 'ベーグル'), 'cake_shop': ('s', 'ケーキ'),
+    '居酒屋': ('i', '居酒屋'), 'お好み焼き': ('w', 'お好み焼き'), 'たこ焼き': ('f', 'たこ焼き'), '焼肉': ('a', '焼肉'), '餃子': ('a', '餃子'), 'うなぎ': ('w', 'うなぎ'),
+    '串かつ': ('i', '串カツ'), '焼き鳥': ('w', '焼き鳥'), '定食': ('w', '定食'), 'もつ鍋': ('w', 'もつ鍋'), 'オムライス': ('y', 'オムライス'), 'パン': ('s', 'パン'),
+    'okonomiyaki_': ('w', 'お好み焼き'),
+    'fries': ('f', 'ポテト'), 'hawaiian': ('y', 'ハワイアン'), 'とんかつ': ('w', 'とんかつ'), 'grill': ('y', 'グリル'), 'bento': ('w', '弁当'), 'salad': ('y', 'サラダ'),
+    'ラーメン': ('r', 'ラーメン'), 'italian_pizza': ('y', 'ピザ'), 'brazilian': ('y', 'ブラジル'), 'russian': ('y', 'ロシア'), 'onigiri': ('w', 'おにぎり'),
+    'noodles': ('r', '麺'), 'okinawan': ('w', '沖縄料理'), 'okinawa': ('w', '沖縄料理'), 'karaage': ('f', 'からあげ'), 'bistro': ('y', 'ビストロ'), 'wine': ('i', 'ワイン'),
+    '中華': ('a', '中華'), 'eel': ('w', 'うなぎ'), '鰻': ('w', 'うなぎ'), 'tenpura': ('w', '天ぷら'), 'cutlet': ('w', 'とんかつ'), 'teahouse': ('c', '茶房'),
+    'british': ('y', 'イギリス'), 'もんじゃ焼き': ('w', 'もんじゃ'), 'monja': ('w', 'もんじゃ'), 'tex-mex': ('a', 'メキシコ'), 'カレー': ('a', 'カレー'),
+    'cafe': ('c', 'カフェ'), 'fish_and_chips': ('y', 'フィッシュ&チップス'), 'singaporean': ('a', 'シンガポール'), 'fugu': ('w', 'ふぐ'),
+    'mediterranean': ('y', '地中海'), 'persian': ('a', 'ペルシャ'), 'ステーキ': ('y', 'ステーキ'), 'diner': ('y', 'ダイナー'), 'juice': ('c', 'ジュース'),
     'coffee_shop': ('c', 'コーヒー'), 'izakaya': ('i', '居酒屋'), 'cake': ('s', 'ケーキ'), 'dessert': ('s', 'スイーツ'), 'ice_cream': ('s', 'アイス'), 'bakery': ('s', 'パン'),
 }
 
@@ -104,31 +124,61 @@ for p in pts:
         grid[k].append(p); uniq.append(p)
 print('unique', len(uniq))
 
-# ---- Overpass（あれば）で ジャンル・営業時間を補う
+# ---- Overpass / Geofabrik（あれば）で ジャンル・営業時間を補う
 ov = []
 for f in sorted(glob.glob(os.path.join(SRC, '*.json'))):
     try: j = json.load(open(f, encoding='utf-8'))
     except Exception: continue
     if str(j.get('file', '')).startswith('osm-'):
+        gf = str(j.get('file', '')).startswith('osm-gf-')
         for oid, lat, lon, tg in j['elements']:
             nm = tg.get('name:ja') or tg.get('name')
-            if nm: ov.append((norm(nm), lat, lon, tg))
+            if nm: ov.append({'oid': oid, 'lat': lat, 'lon': lon, 'tg': tg, 'gf': gf, 'area': j.get('area'), 'used': False,
+                              'keys': {norm(x) for x in (tg.get('name'), tg.get('name:ja')) if x}})
 ovi = defaultdict(list)
-for nm, lat, lon, tg in ov: ovi[nm].append((lat, lon, tg))
+for e in ov:
+    for k in e['keys']: ovi[k].append(e)
 enriched = 0
 for p in uniq:
-    for lat, lon, tg in ovi.get(norm(p['name']), []):
-        if dist_m(p['lat'], p['lon'], lat, lon) < 80:
-            cu = (tg.get('cuisine') or '').split(';')[0].strip()
+    for e in ovi.get(norm(p['name']), []):
+        if dist_m(p['lat'], p['lon'], e['lat'], e['lon']) < 80:
+            e['used'] = True
+            if p.get('_en'): continue
+            tg = e['tg']
+            cu = (tg.get('cuisine') or '').split(';')[0].strip().lower().replace(' ', '_')
             if cu in CUISINE: p['cu'] = CUISINE[cu][1]; p['catHint'] = CUISINE[cu][0]
             if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:60]
             addr = tg.get('addr:quarter') or tg.get('addr:suburb') or tg.get('addr:neighbourhood') or ''
             if addr: p['addr'] = addr
-            enriched += 1; break
+            p['_en'] = True; enriched += 1
+# Geofabrik にだけある名前つきのお店を追加する
+added = 0
+seen = defaultdict(list)
+for e in ov:
+    if not e['gf'] or e['used'] or not e['area']: continue
+    k = (round(e['lat'], 3), round(e['lon'], 3), min(e['keys']))
+    if any(dist_m(e['lat'], e['lon'], q['lat'], q['lon']) < 25 for q in seen[k]): continue
+    seen[k].append(e)
+    tg = e['tg']; nm = tg.get('name') or tg.get('name:ja')
+    cls = tg.get('amenity') or tg.get('shop') or ''
+    p = {'lat': e['lat'], 'lon': e['lon'], 'name': nm, 'cls': cls, 'sub': cls, 'area': e['area'], 'alt': tg.get('name:ja') if tg.get('name:ja') != nm else ''}
+    cu = (tg.get('cuisine') or '').split(';')[0].strip().lower().replace(' ', '_')
+    if cu in CUISINE: p['cu'] = CUISINE[cu][1]; p['catHint'] = CUISINE[cu][0]
+    if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:60]
+    addr = tg.get('addr:quarter') or tg.get('addr:suburb') or tg.get('addr:neighbourhood') or ''
+    if addr: p['addr'] = addr
+    uniq.append(p); added += 1
+print('added from geofabrik', added)
 print('enriched by overpass', enriched)
 
 for p in uniq:
-    p['cat'] = p.get('catHint') or classify(p['cls'], p['sub'], p['name'] + ' ' + (p.get('alt') or ''))
+    p['name'] = (p['name'] or '').split(';')[0].strip() or p['name']
+    base = classify(p['cls'], p['sub'], p['name'] + ' ' + (p.get('alt') or ''))
+    hint = p.get('catHint')
+    if p['cls'] in ('bar', 'pub', 'biergarten') or p['sub'] in ('bar', 'pub', 'biergarten'): hint = 'i'
+    elif p['cls'] == 'fast_food' and hint in ('y', 'w', None) and base in ('f', 'y'): hint = 'f'
+    elif p['cls'] in ('bakery', 'confectionery', 'pastry', 'ice_cream') or p['sub'] in ('bakery', 'confectionery', 'pastry', 'ice_cream'): hint = 's'
+    p['cat'] = hint or base
     p['id'] = stable_id(p['name'], p['lat'], p['lon'])
 
 # ---- 百名店と照合して正確な位置を出す
@@ -198,7 +248,7 @@ cat_counts = defaultdict(int)
 for p in uniq: cat_counts[p['cat']] += 1
 area_counts = defaultdict(int)
 for p in uniq: area_counts[p['area']] += 1
-idx = {'cell': CELL, 'updated': '2026-10-19', 'source': 'OpenStreetMap (OpenFreeMap 2026-10-11)', 'license': 'ODbL — © OpenStreetMap contributors',
+idx = {'cell': CELL, 'updated': '2026-10-19', 'source': 'OpenStreetMap (OpenFreeMap 2026-10-11, Geofabrik 2026-10-19)', 'license': 'ODbL — © OpenStreetMap contributors',
        'areas': {a: {'name': AREAS[a], 'count': area_counts[a]} for a in AREAS}, 'cats': cat_counts, 'cells': {k: len(v) for k, v in cells.items()}}
 json.dump(idx, open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 json.dump(pos, open(os.path.join(OUT, 'hyakumeiten-pos.json'), 'w', encoding='utf-8'), separators=(',', ':'))

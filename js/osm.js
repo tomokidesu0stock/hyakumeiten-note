@@ -59,6 +59,15 @@ O.nearby = function(pos, n, radiusKm){
     return pts.filter(function(p){ return p._d<=radiusKm; }).sort(function(a,b){ return a._d-b._d; }).slice(0, n||10);
   }).catch(function(){ return []; });
 };
+// OSM の opening_hours を日本語っぽく（Mo-Fr 11:00-14:00; Sa off → 月〜金 11:00-14:00 / 土 休み）
+O.hoursJa = function(h){
+  if (!h) return '';
+  var D={Mo:'月',Tu:'火',We:'水',Th:'木',Fr:'金',Sa:'土',Su:'日',PH:'祝'};
+  return String(h).replace(/\b(Mo|Tu|We|Th|Fr|Sa|Su|PH)\b/g, function(m){ return D[m]; })
+    .replace(/([月火水木金土日祝])-([月火水木金土日祝])/g, '$1〜$2')
+    .replace(/([月火水木金土日祝]),(?=[月火水木金土日祝])/g, '$1・')
+    .replace(/\b(off|closed)\b/gi, '休み').replace(/24\/7/, '24時間').replace(/\s*;\s*/g, ' / ');
+};
 O.gmapsURL = function(p){ return 'https://www.google.com/maps/search/'+encodeURIComponent(p.name)+'/@'+p.lat+','+p.lng+',18z'; };
 O.tabelogURL = function(p){ return 'https://tabelog.com/rstLst/?vs=1&sw='+encodeURIComponent(p.name); };
 })();
