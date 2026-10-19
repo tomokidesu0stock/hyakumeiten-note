@@ -239,3 +239,15 @@ body.rating .scale button{font-size:12px;border-radius:7px}
 .pin-f{min-width:38px;height:30px;padding:0 6px;border-radius:15px;background:var(--friend);color:var(--friend-ink);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font:14px var(--display);box-shadow:0 2px 8px rgba(0,0,0,.4)}
 .map-ui .legend i.f{background:var(--friend)}
 .map-ui .seg button{white-space:nowrap}
+
+/* 周辺のお店（OpenStreetMap） */
+.osm-bar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px 2px}
+.osm-bar::-webkit-scrollbar{display:none}
+.osm-bar .chip{background:rgba(23,21,19,.88);border-color:transparent;color:var(--fg2);display:flex;align-items:center;gap:6px;padding:6px 11px;font-size:11px}
+.osm-bar .chip.on{background:rgba(23,21,19,.88);color:var(--fg);border-color:var(--amber)}
+.osm-bar #osmToggle.on{background:var(--amber);color:var(--amber-ink)}
+.osm-bar .osmc i{width:9px;height:9px;border-radius:50%;background:var(--c);display:inline-block;opacity:.45}
+.osm-bar .osmc.on i{opacity:1}
+.osm-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:baseline}
+.map-hint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 14px);z-index:2;background:rgba(23,21,19,.88);color:var(--fg2);font-size:11px;padding:6px 12px;border-radius:999px;white-space:nowrap;pointer-events:none}
+.map-card:not([hidden]) ~ .map-hint, .map-card:not([hidden]) + .map-hint{display:none}

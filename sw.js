@@ -1,7 +1,7 @@
 /* 百名店ノート service worker
    アプリ本体は「ネット優先・つながらないときだけ保存済みを使う」。更新が必ず届くようにする。 */
-var VERSION = 'v1.3.3';
-var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './js/firebase-config.js',
+var VERSION = 'v1.4.0';
+var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './js/osm.js', './data/osm/index.json', './data/osm/hyakumeiten-pos.json', './js/firebase-config.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', './vendor/jszip/jszip.min.js',
   './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];
 var CDN = ['https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'];

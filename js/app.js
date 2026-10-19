@@ -59,7 +59,7 @@ var DB = (function(){
 /* ---------- state ---------- */
 var S = {
   view:'list', tab:'kissa2026', otherList:'', sort:'total', pref:'', vis:'all', q:'',
-  ratings:{}, custom:[], lists:[], photoIdx:{}, pos:null, detail:null, rating:null, tl:{}, tlIndex:null, ov:{}, stations:{}, geoQueue:[], geoBusy:false, map:null, layer:null, mapFilter:'tab', statsMode:'me'
+  ratings:{}, custom:[], lists:[], photoIdx:{}, pos:null, detail:null, rating:null, tl:{}, tlIndex:null, ov:{}, stations:{}, geoQueue:[], geoBusy:false, map:null, layer:null, mapFilter:'tab', statsMode:'me', osmOn:true, osmCats:null
 };
 var CL = function(){ return window.Cloud || {}; };
 function friendSum(id){ var c=CL(); return c.user && c.summary ? c.summary(id) : null; }
@@ -114,7 +114,7 @@ function loadTabelogList(slug){
     var stores=(j.stores||[]).map(function(x){ var rid=x.path.split('/').pop(); var st=stationFor(x.pref,x.area);
       var o={id:'tl-'+slug+'-'+rid, name:x.name, pref:x.pref, area:x.area, closed:x.closed||'', isNew:!!x.isNew, tabelog:'https://tabelog.com/'+x.path+'/', lat:st?st[0]:null, lng:st?st[1]:null, approx:true, list:'tl:'+slug};
       if (S.ov[o.id]) Object.assign(o, S.ov[o.id]); return o; });
-    S.tl[slug]=stores; queueGeocode(stores); return stores; };
+    S.tl[slug]=stores; if (window.OSM && window.OSM.pos) applyPositions(window.OSM.pos); queueGeocode(stores); return stores; };
   return fetch('data/lists/'+slug+'.json').then(function(r){ if(!r.ok) throw new Error('no list'); return r.json(); }).then(function(j){ DB.put('kv',{k:'tl-'+slug,v:j}).catch(function(){}); return parse(j); })
     .catch(function(){ return DB.get('kv','tl-'+slug).then(function(r){ if(!r) throw new Error('リストを読み込めません（オフライン？）'); return parse(r.v); }); });
 }
@@ -532,11 +532,18 @@ function openRecord(){
   pickPhotos(function(files){
     var cands = allStores().filter(function(s){ return !S.ratings[s.id]; });
     var go=function(){
-      var near = S.pos ? cands.map(function(s){ return {s:s,d:dist(S.pos,s)}; }).filter(function(x){ return x.d!=null; }).sort(function(a,b){ return a.d-b.d; }).slice(0,6) : [];
+      var near = S.pos ? cands.map(function(s){ return {s:s,d:dist(S.pos,s)}; }).filter(function(x){ return x.d!=null && (!s_approxFar(x)); }).sort(function(a,b){ return a.d-b.d; }).slice(0,6) : [];
+      function s_approxFar(x){ return x.s.approx && x.d>1.5; }
       openSheet('<div class="eyebrow">記録する</div><h2>どのお店ですか？</h2><div class="meta">'+files.length+' 枚の写真を選びました'+(near.length?' · 現在地に近い順':'')+'</div>'+
         '<div class="search" style="margin-bottom:10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="rq" type="search" placeholder="店名で検索" autocomplete="off"></div><div class="list-rows" id="rrows"></div>'+
         '<div class="acts"><button class="btn ghost" id="newS">リストにない店を追加</button></div>');
       var rows=$('#rrows');
+      if (S.pos && window.OSM){ window.OSM.nearby(S.pos, 12, 0.4).then(function(ops){ if (!ops.length || !$('#rrows') || $('#rq').value) return;
+        var have={}; near.forEach(function(x){ have[x.s.id]=1; });
+        var extra=ops.filter(function(p){ return !(p.st&&have[p.st]); }).slice(0,10);
+        rows.insertAdjacentHTML('beforeend','<div class="sec" style="margin:14px 0 4px">現在地の近くのお店</div>'+extra.map(function(p){ var c=window.OSM.CATS[p.cat]||window.OSM.CATS.o; return '<button data-osm="'+esc(p.id)+'"><span class="osm-dot" style="--c:'+c.color+'"></span>'+esc(p.name)+'<span>'+esc(c.label)+' · '+fmtDist(p._d)+'</span></button>'; }).join(''));
+        $$('[data-osm]',rows).forEach(function(b){ b.onclick=function(){ var p=extra.filter(function(x){ return x.id===b.dataset.osm; })[0]; closeSheet(); adoptOsm(p).then(function(id){ return addPhotos(id,files).then(function(){ openDetail(id); openRate(id); }); }); }; });
+      }); }
       var draw=function(q){ var items = q ? allStores().filter(function(s){ return s.name.toLowerCase().indexOf(q.toLowerCase())>=0; }).slice(0,30).map(function(s){ return {s:s,d:S.pos?dist(S.pos,s):null}; }) : near;
         rows.innerHTML = items.length ? items.map(function(x){ return '<button data-sel="'+x.s.id+'">'+esc(x.s.name)+'<span>'+esc(x.s.area||x.s.pref||'')+(x.d!=null?' · '+fmtDist(x.d):'')+(S.ratings[x.s.id]?' · 評価済み':'')+'</span></button>'; }).join('') : '<div class="empty" style="padding:20px">'+(q?'見つかりません':'検索して選んでください')+'</div>';
         $$('[data-sel]',rows).forEach(function(b){ b.onclick=function(){ var id=b.dataset.sel; closeSheet(); addPhotos(id,files).then(function(){ openDetail(id); openRate(id); }); }; }); };
@@ -551,7 +558,7 @@ function openRecord(){
 function renderMap(){
   $('#hdr').innerHTML='';
   var main=$('#main');
-  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div></div><div class="map-card" id="mapCard" hidden></div>';
+  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div><div class="osm-bar" id="osmBar"></div></div><div class="map-hint" id="mapHint" hidden></div><div class="map-card" id="mapCard" hidden></div>';
   if (typeof L==='undefined'){ main.innerHTML='<div class="empty"><b>地図を読み込めません</b>オフラインのときは地図タイルが表示できません</div>'; return; }
   if (S.map){ try{ S.map.remove(); }catch(e){} S.map=null; }
   if (S.mapFilter==='fr' && !CL().user) S.mapFilter='tab';
@@ -560,10 +567,12 @@ function renderMap(){
     : S.mapFilter==='all' ? allStores() : stores();
   var withPos = list.filter(function(s){ return s.lat!=null; });
   var map = L.map('map',{zoomControl:false, attributionControl:true, tap:false}).setView([35.6895,139.7], 11);
+  var osmRenderer = L.canvas({padding:0.3});
+  var osmLayer = L.layerGroup().addTo(map);
   var pins = L.layerGroup().addTo(map);
   // 国土地理院の淡色地図（キー不要・日本語表記）。z5〜18、それ以上は拡大表示
   L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{minZoom:5, maxNativeZoom:18, maxZoom:19, attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'}).addTo(map);
-  S.map=map;
+  S.map=map; window.__map=map; // 動作確認用
   var bounds=[];
   function drawPins(){
   if (S.map!==map) return;
@@ -581,6 +590,59 @@ function renderMap(){
   }
   S.drawPins = drawPins;
   drawPins();
+
+  /* 周辺のお店（OpenStreetMap） */
+  var OSM=window.OSM, osmShown={}, osmSeq=0;
+  function osmBar(){
+    var bar=$('#osmBar'); if (!bar || !OSM) return;
+    var cats=S.osmCats;
+    bar.innerHTML='<button class="chip'+(S.osmOn?' on':'')+'" id="osmToggle">周辺のお店</button>'+(S.osmOn?Object.keys(OSM.CATS).filter(function(k){ return k!=='o'; }).map(function(k){ var c=OSM.CATS[k], on=!cats||cats[k];
+      return '<button class="chip osmc'+(on?' on':'')+'" data-oc="'+k+'" style="--c:'+c.color+'"><i></i>'+c.label+'</button>'; }).join(''):'');
+    $('#osmToggle').onclick=function(){ S.osmOn=!S.osmOn; osmBar(); updateOsm(true); };
+    $$('[data-oc]').forEach(function(b){ b.onclick=function(){ var k=b.dataset.oc; if (!S.osmCats){ S.osmCats={}; Object.keys(OSM.CATS).forEach(function(x){ S.osmCats[x]=true; }); }
+      // 1つだけ選ぶ → それだけ表示。もう一度押すと全部に戻す
+      var onlyThis = Object.keys(S.osmCats).filter(function(x){ return S.osmCats[x]; }).length===1 && S.osmCats[k];
+      if (onlyThis) S.osmCats=null; else { Object.keys(S.osmCats).forEach(function(x){ S.osmCats[x]=(x===k); }); }
+      osmBar(); updateOsm(true); }; });
+  }
+  function hint(t){ var h=$('#mapHint'); if (!h) return; h.hidden=!t; h.textContent=t||''; }
+  function updateOsm(force){
+    if (!OSM || S.map!==map) return;
+    if (!S.osmOn){ osmLayer.clearLayers(); osmShown={}; hint(''); return; }
+    var z=map.getZoom(), b=map.getBounds();
+    OSM.loadIndex().then(function(){
+      if (z<15){ osmLayer.clearLayers(); osmShown={}; hint(OSM.keysIn(b.getSouth(),b.getWest(),b.getNorth(),b.getEast()).length||z<13?'拡大すると周辺のお店が出ます':''); return; }
+      var my=++osmSeq;
+      OSM.inBounds(b.getSouth(),b.getWest(),b.getNorth(),b.getEast()).then(function(pts){
+        if (my!==osmSeq || S.map!==map) return;
+        if (!pts.length){ hint('この辺りの周辺のお店データはまだありません（東京23区・京都市・伊勢市に対応）'); osmLayer.clearLayers(); osmShown={}; return; }
+        hint('');
+        var mine={}; S.custom.forEach(function(c){ mine[c.id]=1; });
+        var cats=S.osmCats, keep={};
+        pts.forEach(function(p){
+          if (cats && !cats[p.cat]) return;
+          if (p.st && findStore(p.st)) return;         // 百名店はリストのピンで出す
+          if (mine['osm-'+p.id]) return;               // 記録した店は自分のピンで出す
+          keep[p.id]=p;
+        });
+        if (force){ osmLayer.clearLayers(); osmShown={}; }
+        Object.keys(osmShown).forEach(function(id){ if (!keep[id]){ osmLayer.removeLayer(osmShown[id]); delete osmShown[id]; } });
+        Object.keys(keep).forEach(function(id){ if (osmShown[id]) return; var p=keep[id], c=OSM.CATS[p.cat]||OSM.CATS.o;
+          osmShown[id]=L.circleMarker([p.lat,p.lng],{renderer:osmRenderer, radius:6, weight:1.5, color:'#fff', fillColor:c.color, fillOpacity:.95, bubblingMouseEvents:false}).addTo(osmLayer).on('click',function(){ showOsmCard(p); }); });
+      });
+    }).catch(function(){ hint(''); });
+  }
+  function showOsmCard(p){
+    var card=$('#mapCard'); card.hidden=false; var c=OSM.CATS[p.cat]||OSM.CATS.o, d=S.pos?dist(S.pos,p):null;
+    card.innerHTML='<div class="eyebrow" style="color:var(--muted);font-size:10px"><span class="osm-dot" style="--c:'+c.color+'"></span>'+esc(c.label)+(p.cu?' · '+esc(p.cu):'')+'</div>'+
+      '<div class="r"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', p.addr, p.h?'営業 '+p.h:''].filter(Boolean).join(' · '))+'</div></div><button class="btn sm" id="ocRate">記録する</button></div>'+
+      '<div style="display:flex;gap:8px"><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.gmapsURL(p)+'">Googleマップ</a><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.tabelogURL(p)+'">食べログで検索</a></div>';
+    $('#ocRate').onclick=function(){ adoptOsm(p).then(function(id){ openDetail(id); openRate(id); }); };
+  }
+  osmBar();
+  map.attributionControl.addAttribution('<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>');
+  map.on('moveend', function(){ updateOsm(false); });
+  map.on('click', function(){ var c=$('#mapCard'); if (c) c.hidden=true; });
   var done=list.filter(function(s){ return S.ratings[s.id]; }).length;
   $('#legend').innerHTML= fr ? '<span><i class="f"></i>友だちが行った '+list.length+'</span><span style="color:var(--muted)">数字はみんなの平均</span>' : '<span><i></i>行った '+done+'</span><span><i class="o"></i>未訪問 '+(list.length-done)+'</span>'+(withPos.some(function(s){ return s.approx; })?'<span style="color:var(--muted)">ピンは駅周辺の目安</span>':'');
   $$('[data-mf]').forEach(function(b){ b.onclick=function(){ S.mapFilter=b.dataset.mf; renderMap(); }; });
@@ -597,8 +659,17 @@ function renderMap(){
   if (S.pos){ map.setView([S.pos.lat,S.pos.lng],13); drawMe(); nearestCard(); }
   else if (bounds.length) map.fitBounds(bounds,{padding:[60,40], maxZoom:13});
   if (!S.pos) locate().then(function(p){ if(p&&S.map===map){ drawMe(); nearestCard(); } });
-  setTimeout(function(){ map.invalidateSize(); },50);
+  setTimeout(function(){ map.invalidateSize(); updateOsm(true); },50);
 }
+// 周辺のお店を自分の「その他のお店」に入れる（正確な位置つき）
+function adoptOsm(p){
+  var id='osm-'+p.id;
+  if (p.st && findStore(p.st)) return Promise.resolve(p.st);
+  if (findStore(id)) return Promise.resolve(id);
+  var ns={id:id, name:p.name, pref:prefFromLatLng(p.lat,p.lng), area:p.addr||'', address:p.addr||'', lat:p.lat, lng:p.lng, approx:false, closed:'', genre:(window.OSM.CATS[p.cat]||{}).label||'', hours:p.h||'', list:'free', src:'osm'};
+  return DB.put('stores',ns).then(function(){ S.custom.push(ns); return id; });
+}
+function prefFromLatLng(lat,lng){ if (lat>35.4&&lat<35.95&&lng>138.9&&lng<140) return '東京都'; if (lat>34.7&&lat<35.8&&lng>134.8&&lng<136.1) return '京都府'; if (lat>33.7&&lat<35.3&&lng>135.8&&lng<136.99) return '三重県'; return '未設定'; }
 
 /* ---------- stats ---------- */
 function statsSegHTML(){ return CL().configured ? '<div class="seg2" style="margin-bottom:12px"><button data-sm="me" class="'+(S.statsMode==='me'?'on':'')+'">自分</button><button data-sm="all" class="'+(S.statsMode==='all'?'on':'')+'">みんな</button></div>' : ''; }
@@ -735,7 +806,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.3</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.4.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店: © OpenStreetMap contributors（ODbL、OpenFreeMap経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
     '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();
@@ -785,7 +856,15 @@ function importBackup(file){
 }
 
 /* ---------- boot ---------- */
-function applyOverrides(){ Object.keys(S.ov).forEach(function(id){ var s=findStore(id); if (s) Object.assign(s, S.ov[id]); }); queueGeocode(KISSA); return Promise.resolve(); }
+function applyOverrides(){
+  return (window.OSM ? window.OSM.loadPositions() : Promise.resolve({})).then(function(pos){
+    applyPositions(pos);
+    Object.keys(S.ov).forEach(function(id){ var s=findStore(id); if (s) Object.assign(s, S.ov[id]); });
+    queueGeocode(KISSA);
+  });
+}
+// OSMと店名を照合して分かった百名店の正確な位置（自分で直した位置が優先）
+function applyPositions(pos){ pos=pos||{}; allStores().forEach(function(s){ var p=pos[s.id]; if (p && s.approx && !S.ov[s.id]){ s.lat=p[0]; s.lng=p[1]; s.approx=false; s.posSrc='osm'; } }); }
 function boot(){ return load().then(applyOverrides).then(render); }
 
 /* ---------- cloud との接続 ---------- */
