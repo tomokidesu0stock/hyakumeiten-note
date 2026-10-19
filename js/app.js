@@ -133,7 +133,12 @@ function runGeocode(){
     .catch(function(){ S.geoFail=S.geoFail||{}; S.geoFail[k]=(S.geoFail[k]||0)+1; if (S.geoFail[k]<2) S.geoQueue.push(k); else if (Object.keys(S.geoFail).length>3) S.geoQueue=[]; })
     .then(function(){
       if (S.stations[k]){ allStores().forEach(function(s){ if (s.lat==null && s.pref+'|'+s.area===k){ s.lat=S.stations[k][0]; s.lng=S.stations[k][1]; } });
-        clearTimeout(geoRerenderT); geoRerenderT=setTimeout(function(){ if ($('#sheetWrap').hidden && !S.rating && (S.view==='map'||S.sort==='dist')) render(); }, 1500); }
+        clearTimeout(geoRerenderT); geoRerenderT=setTimeout(function(){
+          if (!$('#sheetWrap').hidden || S.rating || S.detail) return;
+          if (S.view==='map' && S.drawPins){ S.drawPins(); return; }
+          var a=document.activeElement; if (a && /INPUT|TEXTAREA/.test(a.tagName)) return;
+          if (S.view==='list' && S.sort==='dist') drawResults();
+        }, 1500); }
       DB.put('kv',{k:'stations',v:S.stations}).catch(function(){});
       setTimeout(function(){ S.geoBusy=false; runGeocode(); }, 1200);
     });
@@ -240,8 +245,9 @@ function locate(){
 /* ---------- render: header + list ---------- */
 function render(){
   $$('#nav button').forEach(function(b){ b.classList.toggle('on', b.dataset.view===S.view); });
-  var main=$('#main'); main.className='main'+(S.view==='map'?' map':'');
-  if (S.view!=='map' && S.map){ S.map.remove(); S.map=null; }
+  var main=$('#main'), onMap = S.view==='map' && !S.detail && !S.rating; main.className='main'+(onMap?' map':'');
+  $('#hdr').hidden = onMap;
+  if (!onMap && S.map){ try{ S.map.remove(); }catch(e){} S.map=null; S.drawPins=null; }
   document.body.classList.toggle('rating', !!S.rating);
   if (S.rating) return renderRate();
   if (S.detail) return renderDetail();
@@ -283,8 +289,22 @@ function renderList(){
     prefList.map(function(p){ return '<button class="chip'+(S.pref===p?' on':'')+'" data-pref="'+esc(p)+'">'+esc(p)+' '+prefs[p]+'</button>'; }).join('')+
   '</div>'+
   '<div class="search" style="margin-top:10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="店名・駅名で検索" value="'+esc(S.q)+'" autocomplete="off"></div>';
-  var v = visible(), vis = v.filter(function(s){ return S.ratings[s.id]; }), unv = v.filter(function(s){ return !S.ratings[s.id]; });
   if (S.sort==='dist' && !S.pos){ locate().then(function(p){ if (p) render(); else toast('位置情報が使えないので店名順に並べています'); }); }
+  main.innerHTML = html+'<div id="results">'+resultsHTML()+'</div>';
+  bindHeader();
+  var q=$('#q'), composing=false;
+  q.addEventListener('compositionstart', function(){ composing=true; });
+  q.addEventListener('compositionend', function(){ composing=false; S.q=q.value.trim(); drawResults(); });
+  q.addEventListener('input', function(e){ if (composing || e.isComposing) return; S.q=q.value.trim(); drawResults(); });
+  $$('[data-vis]').forEach(function(b){ b.onclick=function(){ S.vis=b.dataset.vis; saveUI(); renderList(); }; });
+  $$('[data-pref]').forEach(function(b){ b.onclick=function(){ S.pref = S.pref===b.dataset.pref?'':b.dataset.pref; renderList(); }; });
+  var lp=$('#listPick'); if (lp) lp.onclick=openListPicker;
+  bindResults();
+}
+function drawResults(){ var r=$('#results'); if (!r) return; r.innerHTML=resultsHTML(); bindResults(); }
+function bindResults(){ $$('#results [data-open]').forEach(function(b){ b.onclick=function(){ openDetail(b.dataset.open); }; }); }
+function resultsHTML(){
+  var html='', v = visible(), vis = v.filter(function(s){ return S.ratings[s.id]; }), unv = v.filter(function(s){ return !S.ratings[s.id]; });
   if (!v.length) html += '<div class="empty"><b>'+(stores().length?'該当するお店がありません':'まだお店がありません')+'</b>'+(stores().length?'絞り込みを変えてみてください':'右上の＋から登録できます')+'</div>';
   else {
     if (vis.length) html += '<div class="sec" style="margin-top:14px">行った '+vis.length+' 軒</div><div class="cards">'+vis.map(cardHTML).join('')+'</div>';
@@ -292,13 +312,7 @@ function renderList(){
       html += '<div class="sec">'+(S.sort==='dist'&&S.pos?'近い未訪問':'未訪問')+' '+unv.length+' 軒</div><div class="cards">'+unv.slice(0, 120).map(unvHTML).join('')+(unv.length>120?'<div class="empty" style="padding:16px">他 '+(unv.length-120)+' 軒は検索か絞り込みで</div>':'')+'</div>';
     }
   }
-  main.innerHTML = html;
-  bindHeader();
-  $('#q').oninput=function(e){ S.q=e.target.value.trim(); var sc=main.scrollTop; renderList(); var q=$('#q'); q.focus(); q.setSelectionRange(q.value.length,q.value.length); };
-  $$('[data-vis]').forEach(function(b){ b.onclick=function(){ S.vis=b.dataset.vis; saveUI(); renderList(); }; });
-  $$('[data-pref]').forEach(function(b){ b.onclick=function(){ S.pref = S.pref===b.dataset.pref?'':b.dataset.pref; renderList(); }; });
-  var lp=$('#listPick'); if (lp) lp.onclick=openListPicker;
-  $$('[data-open]').forEach(function(b){ b.onclick=function(){ openDetail(b.dataset.open); }; });
+  return html;
 }
 function bindHeader(){
   $$('[data-tab]').forEach(function(b){ b.onclick=function(){ S.tab=b.dataset.tab; S.pref=''; S.q=''; saveUI(); render(); }; });
@@ -422,7 +436,7 @@ function renderRate(){
   upd();
   function drawOrders(){ $('#orders').innerHTML = orders.map(function(o,i){ return '<button type="button" class="chip on" data-oi="'+i+'">'+esc(o)+' ×</button>'; }).join('') || '<span style="font-size:12px;color:var(--dim)">まだありません</span>'; $$('[data-oi]').forEach(function(b){ b.onclick=function(){ orders.splice(+b.dataset.oi,1); drawOrders(); }; }); }
   function addOrder(){ var inp=$('#f-order'), v=inp.value.trim(); if(!v) return; v.split(/[、,，]+/).forEach(function(x){ x=x.trim(); if(x && orders.indexOf(x)<0) orders.push(x); }); inp.value=''; drawOrders(); inp.focus(); }
-  drawOrders(); $('#addOrder').onclick=addOrder; $('#f-order').onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); addOrder(); } };
+  drawOrders(); $('#addOrder').onclick=addOrder; $('#f-order').onkeydown=function(e){ if (e.isComposing || e.keyCode===229) return; if(e.key==='Enter'){ e.preventDefault(); addOrder(); } };
   $$('.scale').forEach(function(scl){ scl.onclick=function(e){ var b=e.target.closest('button'); if(!b) return; var k=scl.dataset.k,n=+b.dataset.n; cur[k]=cur[k]===n?0:n;
     $$('button',scl).forEach(function(x){ var m=+x.dataset.n; x.className=(cur[k]>=m?'on':'')+(cur[k]===m?' cur':''); }); var o=$('#o-'+k); o.textContent=cur[k]||'未評価'; o.className=cur[k]?'':'none'; upd(); }; });
   var leave=function(then){ var dirty = cur.amb!==r.amb||cur.drink!==r.drink||cur.food!==r.food||$('#f-memo').value.trim()!==r.memo||orders.join('、')!==orders0||$('#f-order').value.trim();
@@ -489,7 +503,7 @@ function openNewList(preset){
     var draw=function(q){ var items=idx.filter(function(e){ return !q || (e.title+e.slug).toLowerCase().indexOf(q.toLowerCase())>=0; });
       $('#lrows').innerHTML = items.length ? items.map(function(e){ return '<button data-slug="'+esc(e.slug)+'"'+(have[e.slug]?' style="opacity:.5"':'')+'>'+esc(e.title)+'<span>'+e.count+' 店'+(have[e.slug]?' · 追加済み':'')+'</span></button>'; }).join('') : '<div class="empty" style="padding:20px">見つかりません</div>';
       $$('[data-slug]',$('#lrows')).forEach(function(b){ b.onclick=function(){ addTabelogList(idx.filter(function(e){ return e.slug===b.dataset.slug; })[0]); }; }); };
-    draw(''); $('#lq').oninput=function(e){ draw(e.target.value.trim()); };
+    draw(''); $('#lq').oninput=function(e){ if (e.isComposing) return; draw(e.target.value.trim()); }; $('#lq').addEventListener('compositionend', function(e){ draw(e.target.value.trim()); });
   }).catch(function(){ $('#lrows').innerHTML='<div class="empty" style="padding:20px">リスト一覧を読み込めません（オフライン？）</div>'; });
   $('#mk').onclick=function(){ var n=$('#l-name').value.trim(); if(!n){ toast('リスト名を入れてください'); return; } var l={id:uid('list'), name:n, created:Date.now()}; DB.put('lists',l).then(function(){ S.lists.push(l); S.otherList=l.id; S.tab='other'; saveUI(); closeSheet(); render(); }); };
 }
@@ -526,7 +540,7 @@ function openRecord(){
       var draw=function(q){ var items = q ? allStores().filter(function(s){ return s.name.toLowerCase().indexOf(q.toLowerCase())>=0; }).slice(0,30).map(function(s){ return {s:s,d:S.pos?dist(S.pos,s):null}; }) : near;
         rows.innerHTML = items.length ? items.map(function(x){ return '<button data-sel="'+x.s.id+'">'+esc(x.s.name)+'<span>'+esc(x.s.area||x.s.pref||'')+(x.d!=null?' · '+fmtDist(x.d):'')+(S.ratings[x.s.id]?' · 評価済み':'')+'</span></button>'; }).join('') : '<div class="empty" style="padding:20px">'+(q?'見つかりません':'検索して選んでください')+'</div>';
         $$('[data-sel]',rows).forEach(function(b){ b.onclick=function(){ var id=b.dataset.sel; closeSheet(); addPhotos(id,files).then(function(){ openDetail(id); openRate(id); }); }; }); };
-      draw(''); $('#rq').oninput=function(e){ draw(e.target.value.trim()); };
+      draw(''); $('#rq').oninput=function(e){ if (e.isComposing) return; draw(e.target.value.trim()); }; $('#rq').addEventListener('compositionend', function(e){ draw(e.target.value.trim()); });
       $('#newS').onclick=function(){ closeSheet(); openNewStore('free', files); };
     };
     if (!S.pos) locate().then(go); else go();
@@ -539,24 +553,33 @@ function renderMap(){
   var main=$('#main');
   main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div></div><div class="map-card" id="mapCard" hidden></div>';
   if (typeof L==='undefined'){ main.innerHTML='<div class="empty"><b>地図を読み込めません</b>オフラインのときは地図タイルが表示できません</div>'; return; }
+  if (S.map){ try{ S.map.remove(); }catch(e){} S.map=null; }
   if (S.mapFilter==='fr' && !CL().user) S.mapFilter='tab';
   var fr = S.mapFilter==='fr';
   var list = fr ? Object.keys(CL().shared||{}).map(function(id){ var s=findStore(id); if (s) return s; var e=CL().shared[id][0]; return {id:id, name:e.storeName, pref:e.pref, area:e.area, address:e.address, lat:e.lat, lng:e.lng, approx:e.approx, _shared:true}; })
     : S.mapFilter==='all' ? allStores() : stores();
   var withPos = list.filter(function(s){ return s.lat!=null; });
-  var map = L.map('map',{zoomControl:false, attributionControl:true}).setView([35.6895,139.7], 11);
+  var map = L.map('map',{zoomControl:false, attributionControl:true, tap:false}).setView([35.6895,139.7], 11);
+  var pins = L.layerGroup().addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
   S.map=map;
-  var seen={}, bounds=[];
+  var bounds=[];
+  function drawPins(){
+  if (S.map!==map) return;
+  pins.clearLayers(); bounds=[]; var seen={};
+  withPos = list.filter(function(s){ return s.lat!=null; });
   withPos.forEach(function(s){
     var key=s.lat.toFixed(4)+','+s.lng.toFixed(4); var k=(seen[key]=(seen[key]||0)+1); // 同じ駅の店は少しずらす
     var ang=k*2.4, rad=k>1?0.0012:0, lat=s.lat+Math.sin(ang)*rad, lng=s.lng+Math.cos(ang)*rad;
     var r=S.ratings[s.id], sc=score(r), f=fr?friendSum(s.id):null;
     var icon=f ? L.divIcon({className:'', html:'<div class="pin-f">'+fmtAvg(f.total)+'</div>', iconSize:[38,30], iconAnchor:[19,15]})
       : L.divIcon({className:'', html: r?'<div class="pin-v">'+fmtTotal(sc.total)+'</div>':'<div class="pin-u"></div>', iconSize:r?[34,34]:[18,18], iconAnchor:r?[17,17]:[9,9]});
-    L.marker([lat,lng],{icon:icon, title:s.name}).addTo(map).on('click',function(){ showMapCard(s); });
+    L.marker([lat,lng],{icon:icon, title:s.name}).addTo(pins).on('click',function(){ showMapCard(s); });
     bounds.push([lat,lng]);
   });
+  }
+  S.drawPins = drawPins;
+  drawPins();
   var done=list.filter(function(s){ return S.ratings[s.id]; }).length;
   $('#legend').innerHTML= fr ? '<span><i class="f"></i>友だちが行った '+list.length+'</span><span style="color:var(--muted)">数字はみんなの平均</span>' : '<span><i></i>行った '+done+'</span><span><i class="o"></i>未訪問 '+(list.length-done)+'</span>'+(withPos.some(function(s){ return s.approx; })?'<span style="color:var(--muted)">ピンは駅周辺の目安</span>':'');
   $$('[data-mf]').forEach(function(b){ b.onclick=function(){ S.mapFilter=b.dataset.mf; renderMap(); }; });
@@ -711,7 +734,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: © OpenStreetMap contributors, © CARTO。住所検索: Nominatim。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.1</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: © OpenStreetMap contributors, © CARTO。住所検索: Nominatim。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn danger sm" id="wipe">すべてのデータを消す</button></div>';
   bindAccount();
   $('#exportBtn').onclick=exportBackup;

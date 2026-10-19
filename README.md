@@ -37,7 +37,8 @@ GitHubの画面でファイルを差し替えて Commit すれば反映されま
 
 ## 使っているもの
 
-- 地図: Leaflet 1.9.4 ＋ CARTO Dark タイル（© OpenStreetMap contributors, © CARTO）
+- 地図: Leaflet 1.9.4（vendor/ に同梱）＋ CARTO Dark タイル（© OpenStreetMap contributors, © CARTO）
 - 住所・駅の検索: Nominatim（OpenStreetMap）
-- zip: JSZip 3.10.1
+- zip: JSZip 3.10.1（vendor/ に同梱）
+- 共有: Firebase Authentication / Cloud Firestore（設定は js/firebase-config.js、ルールは firestore.rules）
 - フォント: Shippori Antique B1 / Noto Sans JP（Google Fonts）

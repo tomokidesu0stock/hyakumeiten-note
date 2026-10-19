@@ -1,7 +1,7 @@
 /* 百名店ノート service worker — アプリ本体をキャッシュしてオフラインでも開けるようにする */
-var VERSION = 'v1.3.0';
-var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './js/firebase-config.js', './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];
-var CDN = ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'];
+var VERSION = 'v1.3.1';
+var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', './vendor/jszip/jszip.min.js', './js/firebase-config.js', './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];
+var CDN = ['https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'];
 
 self.addEventListener('install', function(e){
   e.waitUntil(caches.open('shell-'+VERSION).then(function(c){ return c.addAll(SHELL).then(function(){ return Promise.all(CDN.map(function(u){ return c.add(u).catch(function(){}); })); }); }).then(function(){ return self.skipWaiting(); }));
