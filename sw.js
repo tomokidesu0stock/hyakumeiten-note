@@ -1,8 +1,8 @@
 /* 百名店ノート service worker
    アプリ本体は「ネット優先・つながらないときだけ保存済みを使う」。更新が必ず届くようにする。 */
-var VERSION = 'v1.5.0';
+var VERSION = 'v1.6.0';
 var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './js/osm.js', './data/osm/index.json', './data/osm/hyakumeiten-pos.json','./data/osm/stations.json', './js/firebase-config.js',
-  './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', './vendor/jszip/jszip.min.js',
+  './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css','./vendor/maplibre/maplibre-gl.js','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/leaflet-maplibre-gl.js', './vendor/jszip/jszip.min.js',
   './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];
 var CDN = ['https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'];
 var SHELL_CACHE = 'shell-' + VERSION, TILE_CACHE = 'tiles-v1';
@@ -24,7 +24,7 @@ self.addEventListener('fetch', function(e){
   var req = e.request; if (req.method !== 'GET') return;
   var url = new URL(req.url);
   // 地図タイル：保存済みを先に出し、裏で更新
-  if (url.hostname === 'cyberjapandata.gsi.go.jp'){
+  if (url.hostname === 'cyberjapandata.gsi.go.jp' || url.hostname === 'tiles.openfreemap.org'){
     e.respondWith(caches.open(TILE_CACHE).then(function(c){ return c.match(req).then(function(hit){
       var net = fetch(req).then(function(r){ if (r && (r.ok || r.type==='opaque')) c.put(req, r.clone()); return r; }).catch(function(){ return hit; });
       return hit || net;

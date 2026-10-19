@@ -571,7 +571,7 @@ function renderMap(){
   var osmLayer = L.layerGroup().addTo(map);
   var pins = L.layerGroup().addTo(map);
   // 国土地理院の淡色地図（キー不要・日本語表記）。z5〜18、それ以上は拡大表示
-  L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{minZoom:5, maxNativeZoom:18, maxZoom:19, attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'}).addTo(map);
+  addBaseMap(map);
   S.map=map; window.__map=map; // 動作確認用
   var bounds=[];
   function drawPins(){
@@ -710,6 +710,52 @@ function adoptOsm(p){
 }
 function prefFromLatLng(lat,lng){ if (lat>35.4&&lat<35.95&&lng>138.9&&lng<140) return '東京都'; if (lat>34.7&&lat<35.8&&lng>134.8&&lng<136.1) return '京都府'; if (lat>33.7&&lat<35.3&&lng>135.8&&lng<136.99) return '三重県'; return '未設定'; }
 
+/* ---------- 地図の下地 ----------
+   OpenFreeMap（OpenStreetMap）の「Liberty」スタイルを、日本語ラベル・細かい記号なしに整えて使う。
+   WebGL が使えない・オフラインなどで読めないときは国土地理院の淡色地図にする。 */
+var LIBERTY_URL='https://tiles.openfreemap.org/styles/liberty';
+function gsiLayer(){ return L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{minZoom:5, maxNativeZoom:18, maxZoom:19, attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'}); }
+function hasWebGL(){ try { var c=document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl2')||c.getContext('webgl'))); } catch(e){ return false; } }
+function loadScript(src){ return new Promise(function(ok,ng){ var s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=ng; document.head.appendChild(s); }); }
+function loadCss(href){ if (document.querySelector('link[href="'+href+'"]')) return; var l=document.createElement('link'); l.rel='stylesheet'; l.href=href; document.head.appendChild(l); }
+var vectorLib=null;
+function loadVectorLib(){
+  if (vectorLib) return vectorLib;
+  loadCss('vendor/maplibre/maplibre-gl.css');
+  vectorLib = (window.maplibregl ? Promise.resolve() : loadScript('vendor/maplibre/maplibre-gl.js'))
+    .then(function(){ return L.maplibreGL ? null : loadScript('vendor/maplibre/leaflet-maplibre-gl.js'); })
+    .catch(function(e){ vectorLib=null; throw e; });
+  return vectorLib;
+}
+// 見やすく整える：店や施設の記号・3Dの建物・一方通行の矢印・道路番号を消し、地名は日本語だけにする
+function tidyStyle(j){
+  var HIDE=/^(poi_r20|poi_r7|poi_r1|road_one_way_arrow|road_one_way_arrow_opposite|highway-shield-non-us|highway-shield-us-interstate|road_shield_us)$/;
+  j.layers=j.layers.filter(function(l){ return !HIDE.test(l.id); });
+  var JA=['coalesce',['get','name:ja'],['get','name:nonlatin'],['get','name']];
+  j.layers.forEach(function(l){
+    if (l.layout && l.layout['text-field'] && /name/.test(JSON.stringify(l.layout['text-field']))) l.layout['text-field']=JA;
+    if (l.type==='fill-extrusion'){ l.paint=l.paint||{}; l.paint['fill-extrusion-height']=0; l.paint['fill-extrusion-base']=0; l.paint['fill-extrusion-opacity']=0.6; }
+  });
+  return j;
+}
+var libertyStyle=null;
+function getStyle(){
+  if (libertyStyle) return libertyStyle;
+  libertyStyle = fetch(LIBERTY_URL).then(function(r){ if(!r.ok) throw new Error('style'); return r.json(); }).then(tidyStyle).catch(function(e){ libertyStyle=null; throw e; });
+  return libertyStyle;
+}
+function addBaseMap(map){
+  var fallback=function(){ if (S.map===map && !map._base){ map._base=gsiLayer().addTo(map); } };
+  if (!hasWebGL() || !navigator.onLine){ fallback(); return; }
+  var timer=setTimeout(fallback, 8000);  // 8秒で出なければ地理院地図にする
+  Promise.all([loadVectorLib(), getStyle()]).then(function(r){
+    clearTimeout(timer);
+    if (S.map!==map || map._base) return;
+    map._base=L.maplibreGL({style:r[1]}).addTo(map);
+    map.attributionControl.addAttribution('<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>');
+  }).catch(function(){ clearTimeout(timer); fallback(); });
+}
+
 /* ---------- stats ---------- */
 function statsSegHTML(){ return CL().configured ? '<div class="seg2" style="margin-bottom:12px"><button data-sm="me" class="'+(S.statsMode==='me'?'on':'')+'">自分</button><button data-sm="all" class="'+(S.statsMode==='all'?'on':'')+'">みんな</button></div>' : ''; }
 function bindStatsSeg(){ $$('[data-sm]').forEach(function(b){ b.onclick=function(){ S.statsMode=b.dataset.sm; render(); }; }); }
@@ -845,7 +891,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.5.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安（関東・関西の駅はOSMの駅位置）で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店（関東・関西・三重）: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.6.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安（関東・関西の駅はOSMの駅位置）で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: OpenFreeMap（© OpenMapTiles・© OpenStreetMap contributors、MapLibre で表示）。読めないときは国土地理院（地理院タイル）。周辺のお店（関東・関西・三重）: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
     '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();
