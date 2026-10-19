@@ -1,5 +1,5 @@
 /* 百名店ノート service worker — アプリ本体をキャッシュしてオフラインでも開けるようにする */
-var VERSION = 'v1.3.1';
+var VERSION = 'v1.3.2';
 var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', './vendor/jszip/jszip.min.js', './js/firebase-config.js', './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];
 var CDN = ['https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js'];
 
@@ -13,7 +13,7 @@ self.addEventListener('fetch', function(e){
   var url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   // 地図タイル・ジオコーディング・フォントは都度ネットワーク（タイルは控えめにキャッシュ）
-  if (url.hostname.indexOf('cartocdn.com')>=0){
+  if (url.hostname.indexOf('cyberjapandata.gsi.go.jp')>=0){
     e.respondWith(caches.open('tiles-'+VERSION).then(function(c){ return c.match(e.request).then(function(hit){ var net=fetch(e.request).then(function(r){ if (r.ok) c.put(e.request, r.clone()); return r; }).catch(function(){ return hit; }); return hit || net; }); }));
     return;
   }
