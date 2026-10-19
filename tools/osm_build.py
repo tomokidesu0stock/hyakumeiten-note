@@ -8,7 +8,8 @@ from collections import defaultdict
 SRC = sys.argv[1]
 OUT = '/home/claude/hyakumeiten-note/data/osm'
 CELL = 0.02
-AREAS = {'tokyo23': '東京23区', 'kyoto': '京都市', 'ise': '伊勢市'}
+AREAS = {'kanto': '関東', 'kansai': '関西・三重'}
+OLD_AREA = {'tokyo23': ('kanto', '東京都'), 'kyoto': ('kansai', '京都府'), 'ise': ('kansai', '三重県')}
 
 def norm(s):
     s = unicodedata.normalize('NFKC', s or '').lower()
@@ -110,7 +111,8 @@ for f in sorted(glob.glob(os.path.join(SRC, '*.json'))):
     if str(j.get('file', '')).startswith('ofm-'):
         for t in j['tiles']:
             for lat, lon, name, cls, sub, alt in t['p']:
-                pts.append({'lat': lat, 'lon': lon, 'name': name, 'cls': cls, 'sub': sub, 'area': t['a'], 'alt': alt})
+                ar, pf = OLD_AREA[t['a']]
+                pts.append({'lat': lat, 'lon': lon, 'name': name, 'cls': cls, 'sub': sub, 'area': ar, 'pref': pf, 'alt': alt})
 print('raw points', len(pts))
 
 # 区画の境目で重複した点をまとめる（同じ名前で25m以内）
@@ -125,15 +127,28 @@ for p in pts:
 print('unique', len(uniq))
 
 # ---- Overpass / Geofabrik（あれば）で ジャンル・営業時間を補う
+def mkaddr(e):
+    tg = e['tg']
+    q = tg.get('addr:quarter') or tg.get('addr:suburb') or tg.get('addr:neighbourhood') or ''
+    c = e.get('city') or ''
+    if q and c and q.startswith(c): c = ''
+    if q and c and q in c: q = ''
+    return (c + ' ' + q).strip()
 ov = []
 for f in sorted(glob.glob(os.path.join(SRC, '*.json'))):
     try: j = json.load(open(f, encoding='utf-8'))
     except Exception: continue
-    if str(j.get('file', '')).startswith('osm-'):
-        gf = str(j.get('file', '')).startswith('osm-gf-')
-        for oid, lat, lon, tg in j['elements']:
+    if str(j.get('file', '')).startswith('osm-') and 'elements' in j:
+        gf = str(j.get('file', '')).startswith('osm-gf')
+        region = j.get('region')
+        for el in j['elements']:
+            oid, lat, lon, tg = el[:4]
+            pf = el[4] if len(el) > 4 else ''
+            city = el[5] if len(el) > 5 else ''
+            if region == 'kanto' and not pf and 35.4 < lat < 35.95 and 138.9 < lon < 140.0: pf = '東京都'  # 東京都の境界は島しょ部が外れて組めないため
+            if region and not pf: continue
             nm = tg.get('name:ja') or tg.get('name')
-            if nm: ov.append({'oid': oid, 'lat': lat, 'lon': lon, 'tg': tg, 'gf': gf, 'area': j.get('area'), 'used': False,
+            if nm: ov.append({'oid': oid, 'lat': lat, 'lon': lon, 'tg': tg, 'gf': gf, 'area': region, 'pref': pf, 'city': city, 'used': False,
                               'keys': {norm(x) for x in (tg.get('name'), tg.get('name:ja')) if x}})
 ovi = defaultdict(list)
 for e in ov:
@@ -147,9 +162,9 @@ for p in uniq:
             tg = e['tg']
             cu = (tg.get('cuisine') or '').split(';')[0].strip().lower().replace(' ', '_')
             if cu in CUISINE: p['cu'] = CUISINE[cu][1]; p['catHint'] = CUISINE[cu][0]
-            if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:60]
-            addr = tg.get('addr:quarter') or tg.get('addr:suburb') or tg.get('addr:neighbourhood') or ''
-            if addr: p['addr'] = addr
+            if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:160]
+            p['addr'] = mkaddr(e)
+            if e.get('pref'): p['pref'] = e['pref']
             p['_en'] = True; enriched += 1
 # Geofabrik にだけある名前つきのお店を追加する
 added = 0
@@ -164,9 +179,8 @@ for e in ov:
     p = {'lat': e['lat'], 'lon': e['lon'], 'name': nm, 'cls': cls, 'sub': cls, 'area': e['area'], 'alt': tg.get('name:ja') if tg.get('name:ja') != nm else ''}
     cu = (tg.get('cuisine') or '').split(';')[0].strip().lower().replace(' ', '_')
     if cu in CUISINE: p['cu'] = CUISINE[cu][1]; p['catHint'] = CUISINE[cu][0]
-    if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:60]
-    addr = tg.get('addr:quarter') or tg.get('addr:suburb') or tg.get('addr:neighbourhood') or ''
-    if addr: p['addr'] = addr
+    if tg.get('opening_hours'): p['h'] = tg['opening_hours'][:160]
+    p['addr'] = mkaddr(e); p['pref'] = e.get('pref', '')
     uniq.append(p); added += 1
 print('added from geofabrik', added)
 print('enriched by overpass', enriched)
@@ -186,17 +200,18 @@ sys.path.insert(0, '/home/claude')
 stores = []
 dj = open('/home/claude/hyakumeiten-note/js/data.js', encoding='utf-8').read()
 stations = json.loads(re.search(r'window\.STATIONS = (\{[\s\S]*?\});', dj).group(1))
+st2 = json.load(open(os.path.join(OUT, 'stations.json'), encoding='utf-8')) if os.path.exists(os.path.join(OUT, 'stations.json')) else {}
 raw = re.search(r'window\.KISSA_2026_RAW = `([\s\S]*?)`;', dj).group(1).split('\n')
 for i, l in enumerate(raw):
     c = l.split('|')
-    st = stations.get(c[2])
+    st = st2.get(c[1] + '|' + c[2]) or stations.get(c[2])
     stores.append({'id': f'k2026-{i+1}', 'name': c[0], 'pref': c[1], 'area': c[2], 'lat': st[0] if st else None, 'lon': st[1] if st else None})
 for f in glob.glob('/home/claude/hyakumeiten-note/data/lists/*.json'):
     if f.endswith('index.json'): continue
     j = json.load(open(f, encoding='utf-8'))
     for x in j['stores']:
         rid = x['path'].split('/')[-1]
-        st = stations.get(x['area'])
+        st = st2.get(x['pref'] + '|' + x['area']) or stations.get(x['area'])
         stores.append({'id': f"tl-{j['slug']}-{rid}", 'name': x['name'], 'pref': x['pref'], 'area': x['area'], 'lat': st[0] if st else None, 'lon': st[1] if st else None})
 
 AREA_PREF = {'tokyo23': '東京都', 'kyoto': '京都府', 'ise': '三重県'}
@@ -216,7 +231,7 @@ for p in uniq:
 pos = {}; matched = 0
 for s in stores:
     full = norm(strip_paren(s['name'])); body, br = branch_split(s['name'])
-    cands = {id(p): p for k in {full, body} for p in osm_idx.get(k, []) if AREA_PREF.get(p['area']) == s['pref']}
+    cands = {id(p): p for k in {full, body} for p in osm_idx.get(k, []) if p.get('pref') == s['pref']}
     ok = []
     for p in cands.values():
         same = (p['_full'] == full) or (p['_full'] == body) or (p['_body'] == full) or (p['_body'] == body)
@@ -224,6 +239,10 @@ for s in stores:
         if br and p['_br'] and br != p['_br'] and not (br.endswith('本店') and p['_br'].endswith('本店')): continue  # 別の支店
         if len(body) < 3: continue
         if br and not p['_br'] and s['lat'] is None and p['_full'] != full: continue  # 支店名あり×OSMは支店名なし×駅も不明 → 別の支店かもしれない
+        # 市区町村名がわかる店は、OSM側の住所と市区町村が一致すること
+        if re.search(r'(市|区|町|村)$', s['area'] or '') and p.get('addr') and s['area'] not in p['addr'] and not (p['addr'].split(' ')[0] in s['area']): continue
+        # 駅の位置がわからないときは、短い店名（よくある名前）は決めない
+        if s['lat'] is None and not re.search(r'(市|区|町|村)$', s['area'] or '') and len(body) < 4: continue
         d = dist_m(s['lat'], s['lon'], p['lat'], p['lon']) if s['lat'] is not None else None
         if d is None or d < 2500: ok.append((d if d is not None else 1e9, p))
     if not ok: continue
@@ -235,12 +254,13 @@ for s in stores:
 print('hyakumeiten matched', matched, 'of', len(stores))
 
 # ---- 区画ファイルに分割
+PREFS = ['東京都', '神奈川県', '千葉県', '埼玉県', '茨城県', '栃木県', '群馬県', '京都府', '大阪府', '兵庫県', '滋賀県', '奈良県', '和歌山県', '三重県']
 os.makedirs(os.path.join(OUT, 'cells'), exist_ok=True)
 for f in glob.glob(os.path.join(OUT, 'cells', '*.json')): os.remove(f)
 cells = defaultdict(list)
 for p in uniq:
     k = f"{math.floor(p['lat']/CELL)}_{math.floor(p['lon']/CELL)}"
-    cells[k].append([p['id'], p['lat'], p['lon'], p['name'], p['cat'], p.get('cu', ''), p.get('h', ''), p.get('st', ''), p.get('addr', '')])
+    cells[k].append([p['id'], p['lat'], p['lon'], p['name'], p['cat'], p.get('cu', ''), p.get('h', ''), p.get('st', ''), p.get('addr', ''), PREFS.index(p['pref']) if p.get('pref') in PREFS else -1])
 for k, arr in cells.items():
     arr.sort(key=lambda a: (a[4], a[3]))
     json.dump(arr, open(os.path.join(OUT, 'cells', k + '.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
@@ -249,7 +269,7 @@ for p in uniq: cat_counts[p['cat']] += 1
 area_counts = defaultdict(int)
 for p in uniq: area_counts[p['area']] += 1
 idx = {'cell': CELL, 'updated': '2026-10-19', 'source': 'OpenStreetMap (OpenFreeMap 2026-10-11, Geofabrik 2026-10-19)', 'license': 'ODbL — © OpenStreetMap contributors',
-       'areas': {a: {'name': AREAS[a], 'count': area_counts[a]} for a in AREAS}, 'cats': cat_counts, 'cells': {k: len(v) for k, v in cells.items()}}
+       'areas': {a: {'name': AREAS[a], 'count': area_counts[a]} for a in AREAS}, 'cats': cat_counts, 'prefs': PREFS, 'cells': {k: len(v) for k, v in cells.items()}}
 json.dump(idx, open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 json.dump(pos, open(os.path.join(OUT, 'hyakumeiten-pos.json'), 'w', encoding='utf-8'), separators=(',', ':'))
 tot = sum(os.path.getsize(os.path.join(OUT, 'cells', f)) for f in os.listdir(os.path.join(OUT, 'cells')))

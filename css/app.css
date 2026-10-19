@@ -251,3 +251,17 @@ body.rating .scale button{font-size:12px;border-radius:7px}
 .osm-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:baseline}
 .map-hint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + 14px);z-index:2;background:rgba(23,21,19,.88);color:var(--fg2);font-size:11px;padding:6px 12px;border-radius:999px;white-space:nowrap;pointer-events:none}
 .map-card:not([hidden]) ~ .map-hint, .map-card:not([hidden]) + .map-hint{display:none}
+/* 周辺のお店：細かいジャンル・検索・営業中 */
+.osm-sub{margin-top:6px}
+.osm-bar .chip .n{color:var(--muted);font-size:10px}
+.osm-bar #osmFind svg{display:block}
+.osm-bar #osmOpen.on{background:#2f855a;color:#fff;border-color:#2f855a}
+.osm-find{display:flex;flex-direction:column;gap:8px}
+.osm-find input{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:10px 12px;font:16px var(--ui)}
+.of-res{max-height:42vh;overflow-y:auto;display:flex;flex-direction:column;margin:0 -6px}
+.of-row{display:flex;align-items:center;gap:10px;text-align:left;background:none;border:0;border-top:1px solid var(--line);color:var(--fg);padding:9px 6px;font:inherit;cursor:pointer}
+.of-row .t{display:flex;flex-direction:column;min-width:0}
+.of-row b{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.of-row small{font-size:11px;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.open-now{display:inline-block;margin-top:4px;font-size:10px;padding:2px 7px;border-radius:999px;background:var(--card2);color:var(--muted)}
+.open-now.on{background:rgba(47,133,90,.2);color:#6fcf97}

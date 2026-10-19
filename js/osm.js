@@ -5,7 +5,7 @@
 'use strict';
 var CELL = 0.02; // 約2km四方
 var O = window.OSM = {
-  index: null, cells: {}, loading: {}, pos: null,
+  index: null, cells: {}, loading: {}, pos: null, st: null, // st: 「都道府県|駅名」→ 駅の位置（OSM）
   CATS: {
     c:{label:'カフェ・喫茶', color:'#b07a3c'},
     w:{label:'和食', color:'#c8553d'},
@@ -28,7 +28,8 @@ O.loadIndex = function(){
 // 百名店の正確な位置（OSMの店名と照合したもの）
 O.loadPositions = function(){
   if (O.pos) return Promise.resolve(O.pos);
-  return fetch('data/osm/hyakumeiten-pos.json').then(function(r){ return r.ok ? r.json() : {}; }).then(function(j){ O.pos=j||{}; return O.pos; }).catch(function(){ O.pos={}; return O.pos; });
+  var st = fetch('data/osm/stations.json').then(function(r){ return r.ok ? r.json() : {}; }).then(function(j){ O.st=j||{}; }).catch(function(){ O.st={}; });
+  return st.then(function(){ return fetch('data/osm/hyakumeiten-pos.json'); }).then(function(r){ return r.ok ? r.json() : {}; }).then(function(j){ O.pos=j||{}; return O.pos; }).catch(function(){ O.pos={}; return O.pos; });
 };
 O.has = function(k){ return !!(O.index && O.index.cells && O.index.cells[k]); };
 O.loadCell = function(k){
@@ -36,7 +37,8 @@ O.loadCell = function(k){
   if (!O.has(k)) return Promise.resolve([]);
   if (O.loading[k]) return O.loading[k];
   O.loading[k] = fetch('data/osm/cells/'+k+'.json').then(function(r){ return r.json(); }).then(function(arr){
-    var pts = arr.map(function(a){ return {id:a[0], lat:a[1], lng:a[2], name:a[3], cat:a[4], cu:a[5]||'', h:a[6]||'', st:a[7]||'', addr:a[8]||''}; });
+    var P = (O.index && O.index.prefs) || [];
+    var pts = arr.map(function(a){ return {id:a[0], lat:a[1], lng:a[2], name:a[3], cat:a[4], cu:a[5]||'', h:a[6]||'', st:a[7]||'', addr:a[8]||'', pref:a[9]>=0 ? (P[a[9]]||'') : ''}; });
     O.cells[k] = pts; delete O.loading[k]; return pts;
   }).catch(function(){ delete O.loading[k]; return []; });
   return O.loading[k];
@@ -68,6 +70,63 @@ O.hoursJa = function(h){
     .replace(/([月火水木金土日祝]),(?=[月火水木金土日祝])/g, '$1・')
     .replace(/\b(off|closed)\b/gi, '休み').replace(/24\/7/, '24時間').replace(/\s*;\s*/g, ' / ');
 };
+// 営業中かどうか（true / false / わからなければ null）。よくある書き方だけ解釈する
+var DAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+O.week = function(h){
+  if (!h) return null;
+  h = String(h).trim();
+  if (h === '24/7') { var a=[]; for (var i=0;i<7;i++) a.push([[0,1440]]); return a; }
+  var week = [[],[],[],[],[],[],[]], any=false;
+  var rules = h.split(/\s*(?:;|\|\|)\s*/);
+  for (var r=0; r<rules.length; r++){
+    var rule = rules[r].trim(); if (!rule) continue;
+    var m = rule.match(/^((?:(?:Mo|Tu|We|Th|Fr|Sa|Su|PH)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?\s*,?\s*)+)?\s*(.*)$/);
+    if (!m) return null;
+    var dspec = (m[1]||'').trim(), rest = (m[2]||'').trim();
+    var days = [];
+    if (!dspec) days = [0,1,2,3,4,5,6];
+    else {
+      var parts = dspec.split(/\s*,\s*/).filter(Boolean), onlyPH = true;
+      parts.forEach(function(t){ if (t==='PH') return; onlyPH=false; var ab=t.split('-'), a=DAYS.indexOf(ab[0]), b=ab[1]?DAYS.indexOf(ab[1]):a; if (a<0||b<0) return; for (var d=a;;d=(d+1)%7){ days.push(d); if (d===b) break; } });
+      if (onlyPH) continue;  // 祝日だけのルールは無視
+    }
+    var iv;
+    if (/^(off|closed)$/i.test(rest)) iv = [];
+    else {
+      if (!rest) return null;
+      iv = [];
+      var ok = rest.split(/\s*,\s*/).every(function(t){
+        var x = t.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\+?$/); if (!x) return false;
+        var s = +x[1]*60 + +x[2], e = +x[3]*60 + +x[4]; if (e <= s) e += 1440; iv.push([s,e]); return true; });
+      if (!ok) return null;
+    }
+    days.forEach(function(d){ week[d] = iv.slice(); }); any = true;
+  }
+  return any ? week : null;
+};
+O.isOpen = function(h, now){
+  var w = O.week(h); if (!w) return null;
+  now = now || new Date();
+  var d = (now.getDay()+6)%7, m = now.getHours()*60 + now.getMinutes(), pd = (d+6)%7;
+  if (w[d].some(function(t){ return m>=t[0] && m<t[1]; })) return true;
+  if (w[pd].some(function(t){ return t[1]>1440 && m < t[1]-1440; })) return true;
+  return false;
+};
+// 店名で探す（地図の中心のまわり 約10km 四方）
+O.search = function(q, center, n){
+  var nq = O.norm(q); if (!nq) return Promise.resolve([]);
+  var r = 2, ci = Math.floor(center.lat/CELL), cj = Math.floor(center.lng/CELL), keys = [];
+  for (var i=ci-r;i<=ci+r;i++) for (var j=cj-r;j<=cj+r;j++){ var k=i+'_'+j; if (O.has(k)) keys.push(k); }
+  return Promise.all(keys.map(O.loadCell)).then(function(all){
+    var out = [];
+    all.forEach(function(pts){ pts.forEach(function(p){ if (!p._n) p._n = O.norm(p.name); if (p._n.indexOf(nq) >= 0 || (p.cu && p.cu.indexOf(q) >= 0)) out.push(p); }); });
+    var R = 6371;
+    out.forEach(function(p){ var x=(p.lng-center.lng)*Math.PI/180*Math.cos(center.lat*Math.PI/180), y=(p.lat-center.lat)*Math.PI/180; p._d=Math.sqrt(x*x+y*y)*R; });
+    out.sort(function(a,b){ return a._d-b._d; });
+    return out.slice(0, n||40);
+  });
+};
+O.norm = function(s){ return String(s||'').normalize('NFKC').toLowerCase().replace(/[\s・･\-‐ー－―〜~'’"“”「」『』()（）［］\[\]&＆.,、。!！?？\/／]+/g, ''); };
 O.gmapsURL = function(p){ return 'https://www.google.com/maps/search/'+encodeURIComponent(p.name)+'/@'+p.lat+','+p.lng+',18z'; };
 O.tabelogURL = function(p){ return 'https://tabelog.com/rstLst/?vs=1&sw='+encodeURIComponent(p.name); };
 })();

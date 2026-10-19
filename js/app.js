@@ -118,7 +118,7 @@ function loadTabelogList(slug){
   return fetch('data/lists/'+slug+'.json').then(function(r){ if(!r.ok) throw new Error('no list'); return r.json(); }).then(function(j){ DB.put('kv',{k:'tl-'+slug,v:j}).catch(function(){}); return parse(j); })
     .catch(function(){ return DB.get('kv','tl-'+slug).then(function(r){ if(!r) throw new Error('リストを読み込めません（オフライン？）'); return parse(r.v); }); });
 }
-function stationFor(pref, area){ if(!area) return null; var k=pref+'|'+area; if (S.stations[k]) return S.stations[k]; if (window.STATIONS[area]) return window.STATIONS[area]; return null; }
+function stationFor(pref, area){ if(!area) return null; var k=pref+'|'+area; if (window.OSM && OSM.st && OSM.st[k]) return OSM.st[k]; if (S.stations[k]) return S.stations[k]; if (window.STATIONS[area]) return window.STATIONS[area]; return null; }
 // 駅名から座標を少しずつ調べる（Nominatim、1件ずつ間隔をあけて）
 function queueGeocode(stores){
   var seen={}; stores.forEach(function(s){ if (s.lat!=null||!s.area) return; var k=s.pref+'|'+s.area; if (seen[k]||S.stations[k]===null) return; seen[k]=1; if (S.geoQueue.indexOf(k)<0) S.geoQueue.push(k); });
@@ -558,7 +558,7 @@ function openRecord(){
 function renderMap(){
   $('#hdr').innerHTML='';
   var main=$('#main');
-  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div><div class="osm-bar" id="osmBar"></div></div><div class="map-hint" id="mapHint" hidden></div><div class="map-card" id="mapCard" hidden></div>';
+  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div><div class="osm-bar" id="osmBar"></div><div class="osm-bar osm-sub" id="osmSub" hidden></div></div><div class="map-hint" id="mapHint" hidden></div><div class="map-card" id="mapCard" hidden></div>';
   if (typeof L==='undefined'){ main.innerHTML='<div class="empty"><b>地図を読み込めません</b>オフラインのときは地図タイルが表示できません</div>'; return; }
   if (S.map){ try{ S.map.remove(); }catch(e){} S.map=null; }
   if (S.mapFilter==='fr' && !CL().user) S.mapFilter='tab';
@@ -596,14 +596,50 @@ function renderMap(){
   function osmBar(){
     var bar=$('#osmBar'); if (!bar || !OSM) return;
     var cats=S.osmCats;
-    bar.innerHTML='<button class="chip'+(S.osmOn?' on':'')+'" id="osmToggle">周辺のお店</button>'+(S.osmOn?Object.keys(OSM.CATS).filter(function(k){ return k!=='o'; }).map(function(k){ var c=OSM.CATS[k], on=!cats||cats[k];
+    bar.innerHTML='<button class="chip'+(S.osmOn?' on':'')+'" id="osmToggle">周辺のお店</button>'+(S.osmOn?'<button class="chip" id="osmFind" aria-label="店名で探す"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>探す</button><button class="chip'+(S.osmOpen?' on':'')+'" id="osmOpen">営業中</button>':'')+(S.osmOn?Object.keys(OSM.CATS).filter(function(k){ return k!=='o'; }).map(function(k){ var c=OSM.CATS[k], on=!cats||cats[k];
       return '<button class="chip osmc'+(on?' on':'')+'" data-oc="'+k+'" style="--c:'+c.color+'"><i></i>'+c.label+'</button>'; }).join(''):'');
     $('#osmToggle').onclick=function(){ S.osmOn=!S.osmOn; osmBar(); updateOsm(true); };
+    var of=$('#osmFind'); if (of) of.onclick=openOsmSearch;
+    var oo=$('#osmOpen'); if (oo) oo.onclick=function(){ S.osmOpen=!S.osmOpen; osmBar(); updateOsm(true); };
     $$('[data-oc]').forEach(function(b){ b.onclick=function(){ var k=b.dataset.oc; if (!S.osmCats){ S.osmCats={}; Object.keys(OSM.CATS).forEach(function(x){ S.osmCats[x]=true; }); }
       // 1つだけ選ぶ → それだけ表示。もう一度押すと全部に戻す
       var onlyThis = Object.keys(S.osmCats).filter(function(x){ return S.osmCats[x]; }).length===1 && S.osmCats[k];
       if (onlyThis) S.osmCats=null; else { Object.keys(S.osmCats).forEach(function(x){ S.osmCats[x]=(x===k); }); }
+      S.osmCu=null;
       osmBar(); updateOsm(true); }; });
+  }
+  function oneCat(){ var c=S.osmCats; if (!c) return null; var on=Object.keys(c).filter(function(x){ return c[x]; }); return on.length===1 ? on[0] : null; }
+  // 1つのジャンルを選んだときは、その中の細かい種類（寿司・そば など）で絞り込める
+  function osmSub(pts){
+    var el=$('#osmSub'); if (!el) return; var k=oneCat();
+    if (!S.osmOn || !k){ el.hidden=true; el.innerHTML=''; return; }
+    var cnt={}; pts.forEach(function(p){ if (p.cat===k && p.cu) cnt[p.cu]=(cnt[p.cu]||0)+1; });
+    var top=Object.keys(cnt).sort(function(a,b){ return cnt[b]-cnt[a]; }).slice(0,12);
+    if (S.osmCu && top.indexOf(S.osmCu)<0) top.unshift(S.osmCu);
+    if (!top.length){ el.hidden=true; el.innerHTML=''; return; }
+    el.hidden=false;
+    el.innerHTML='<button class="chip'+(!S.osmCu?' on':'')+'" data-cu="">すべて</button>'+top.map(function(c){ return '<button class="chip'+(S.osmCu===c?' on':'')+'" data-cu="'+esc(c)+'">'+esc(c)+(cnt[c]?' <span class="n">'+cnt[c]+'</span>':'')+'</button>'; }).join('');
+    $$('[data-cu]').forEach(function(b){ b.onclick=function(){ S.osmCu=b.dataset.cu||null; updateOsm(true); }; });
+  }
+  function openOsmSearch(){
+    var card=$('#mapCard'); card.hidden=false;
+    card.innerHTML='<div class="osm-find"><div class="r"><input id="ofq" type="search" placeholder="店名やジャンル（例：珈琲、寿司）" autocomplete="off" enterkeyhint="search"><button class="btn ghost sm" id="ofClose">閉じる</button></div><div class="sub" id="ofNote">地図の中心から約5kmの範囲を探します</div><div id="ofRes" class="of-res"></div></div>';
+    var q=$('#ofq'), comp=false, t=null;
+    function run(){ var v=q.value.trim(); if (!v){ $('#ofRes').innerHTML=''; return; } var c=map.getCenter();
+      OSM.loadIndex().then(function(){ return OSM.search(v,{lat:c.lat,lng:c.lng},40); }).then(function(res){
+        if (q.value.trim()!==v) return;
+        $('#ofNote').textContent = res.length ? res.length+' 件（近い順）' : '見つかりませんでした（地図を動かすと範囲が変わります）';
+        $('#ofRes').innerHTML=res.map(function(p,i){ var cc=OSM.CATS[p.cat]||OSM.CATS.o, op=OSM.isOpen(p.h);
+          return '<button class="of-row" data-i="'+i+'"><span class="osm-dot" style="--c:'+cc.color+'"></span><span class="t"><b>'+esc(p.name)+'</b><small>'+esc([p.cu||cc.label, p.addr, p._d<3?('約'+Math.max(1,Math.round(p._d*1000/80))+'分'):p._d.toFixed(1)+'km', op===true?'営業中':''].filter(Boolean).join(' · '))+'</small></span></button>'; }).join('');
+        $$('#ofRes [data-i]').forEach(function(b){ b.onclick=function(){ var p=res[+b.dataset.i]; map.setView([p.lat,p.lng],17); var st=p.st&&findStore(p.st); if (st) showMapCard(st); else showOsmCard(p); }; });
+      }); }
+    q.addEventListener('compositionstart',function(){ comp=true; });
+    q.addEventListener('compositionend',function(){ comp=false; clearTimeout(t); t=setTimeout(run,200); });
+    q.addEventListener('input',function(){ if (comp) return; clearTimeout(t); t=setTimeout(run,250); });
+    q.addEventListener('keydown',function(e){ if (e.key==='Enter' && !e.isComposing && e.keyCode!==229){ e.preventDefault(); clearTimeout(t); run(); q.blur(); } });
+    $('#ofClose').onclick=function(){ card.hidden=true; };
+    card.onclick=function(e){ e.stopPropagation(); };
+    setTimeout(function(){ q.focus(); }, 50);
   }
   function hint(t){ var h=$('#mapHint'); if (!h) return; h.hidden=!t; h.textContent=t||''; }
   function updateOsm(force){
@@ -611,20 +647,23 @@ function renderMap(){
     if (!S.osmOn){ osmLayer.clearLayers(); osmShown={}; hint(''); return; }
     var z=map.getZoom(), b=map.getBounds();
     OSM.loadIndex().then(function(){
-      if (z<15){ osmLayer.clearLayers(); osmShown={}; hint(OSM.keysIn(b.getSouth(),b.getWest(),b.getNorth(),b.getEast()).length||z<13?'拡大すると周辺のお店が出ます':''); return; }
+      if (z<15){ osmLayer.clearLayers(); osmShown={}; osmSub([]); hint(OSM.keysIn(b.getSouth(),b.getWest(),b.getNorth(),b.getEast()).length||z<13?'拡大すると周辺のお店が出ます':''); return; }
       var my=++osmSeq;
       OSM.inBounds(b.getSouth(),b.getWest(),b.getNorth(),b.getEast()).then(function(pts){
         if (my!==osmSeq || S.map!==map) return;
-        if (!pts.length){ hint('この辺りの周辺のお店データはまだありません（東京23区・京都市・伊勢市に対応）'); osmLayer.clearLayers(); osmShown={}; return; }
-        hint('');
+        if (!pts.length){ hint('この辺りの周辺のお店データはまだありません（関東・関西・三重に対応）'); osmLayer.clearLayers(); osmShown={}; return; }
         var mine={}; S.custom.forEach(function(c){ mine[c.id]=1; });
-        var cats=S.osmCats, keep={};
+        var cats=S.osmCats, keep={}, now=new Date(), nk=0;
+        osmSub(pts);
         pts.forEach(function(p){
           if (cats && !cats[p.cat]) return;
+          if (S.osmCu && p.cu!==S.osmCu) return;
+          if (S.osmOpen && OSM.isOpen(p.h,now)!==true) return;
           if (p.st && findStore(p.st)) return;         // 百名店はリストのピンで出す
           if (mine['osm-'+p.id]) return;               // 記録した店は自分のピンで出す
-          keep[p.id]=p;
+          keep[p.id]=p; nk++;
         });
+        hint(S.osmOpen ? (nk ? '営業中のお店 '+nk+' 軒（営業時間がわかる店だけ）' : 'この範囲に今営業中とわかるお店はありません') : '');
         if (force){ osmLayer.clearLayers(); osmShown={}; }
         Object.keys(osmShown).forEach(function(id){ if (!keep[id]){ osmLayer.removeLayer(osmShown[id]); delete osmShown[id]; } });
         Object.keys(keep).forEach(function(id){ if (osmShown[id]) return; var p=keep[id], c=OSM.CATS[p.cat]||OSM.CATS.o;
@@ -635,7 +674,7 @@ function renderMap(){
   function showOsmCard(p){
     var card=$('#mapCard'); card.hidden=false; var c=OSM.CATS[p.cat]||OSM.CATS.o, d=S.pos?dist(S.pos,p):null;
     card.innerHTML='<div class="eyebrow" style="color:var(--muted);font-size:10px"><span class="osm-dot" style="--c:'+c.color+'"></span>'+esc(c.label)+(p.cu?' · '+esc(p.cu):'')+'</div>'+
-      '<div class="r"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', p.addr, p.h?'営業 '+OSM.hoursJa(p.h):''].filter(Boolean).join(' · '))+'</div></div><button class="btn sm" id="ocRate">記録する</button></div>'+
+      '<div class="r"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', p.addr, p.h?'営業 '+OSM.hoursJa(p.h):''].filter(Boolean).join(' · '))+'</div>'+(function(){ var o=OSM.isOpen(p.h); return o===true?'<div class="open-now on">営業中</div>':o===false?'<div class="open-now">営業時間外</div>':''; })()+'</div><button class="btn sm" id="ocRate">記録する</button></div>'+
       '<div style="display:flex;gap:8px"><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.gmapsURL(p)+'">Googleマップ</a><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="'+OSM.tabelogURL(p)+'">食べログで検索</a></div>';
     $('#ocRate').onclick=function(){ adoptOsm(p).then(function(id){ openDetail(id); openRate(id); }); };
   }
@@ -666,7 +705,7 @@ function adoptOsm(p){
   var id='osm-'+p.id;
   if (p.st && findStore(p.st)) return Promise.resolve(p.st);
   if (findStore(id)) return Promise.resolve(id);
-  var ns={id:id, name:p.name, pref:prefFromLatLng(p.lat,p.lng), area:p.addr||'', address:p.addr||'', lat:p.lat, lng:p.lng, approx:false, closed:'', genre:(window.OSM.CATS[p.cat]||{}).label||'', hours:window.OSM.hoursJa(p.h||''), list:'free', src:'osm'};
+  var ns={id:id, name:p.name, pref:p.pref||prefFromLatLng(p.lat,p.lng), area:p.addr||'', address:p.addr||'', lat:p.lat, lng:p.lng, approx:false, closed:'', genre:(window.OSM.CATS[p.cat]||{}).label||'', hours:window.OSM.hoursJa(p.h||''), list:'free', src:'osm'};
   return DB.put('stores',ns).then(function(){ S.custom.push(ns); return id; });
 }
 function prefFromLatLng(lat,lng){ if (lat>35.4&&lat<35.95&&lng>138.9&&lng<140) return '東京都'; if (lat>34.7&&lat<35.8&&lng>134.8&&lng<136.1) return '京都府'; if (lat>33.7&&lat<35.3&&lng>135.8&&lng<136.99) return '三重県'; return '未設定'; }
@@ -806,7 +845,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.4.1</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.5.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安（関東・関西の駅はOSMの駅位置）で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。周辺のお店（関東・関西・三重）: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
     '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();
@@ -864,7 +903,7 @@ function applyOverrides(){
   });
 }
 // OSMと店名を照合して分かった百名店の正確な位置（自分で直した位置が優先）
-function applyPositions(pos){ pos=pos||{}; allStores().forEach(function(s){ var p=pos[s.id]; if (p && s.approx && !S.ov[s.id]){ s.lat=p[0]; s.lng=p[1]; s.approx=false; s.posSrc='osm'; } }); }
+function applyPositions(pos){ pos=pos||{}; var st=(window.OSM&&OSM.st)||{}; allStores().forEach(function(s){ if (S.ov[s.id]&&S.ov[s.id].lat!=null) return; var p=pos[s.id]; if (p && s.approx){ s.lat=p[0]; s.lng=p[1]; s.approx=false; s.posSrc='osm'; return; } var q=s.approx&&st[s.pref+'|'+s.area]; if (q){ s.lat=q[0]; s.lng=q[1]; } }); }
 function boot(){ return load().then(applyOverrides).then(render); }
 
 /* ---------- cloud との接続 ---------- */
