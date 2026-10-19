@@ -37,21 +37,33 @@ var DB = (function(){
       t.onerror = function(){ rej(t.error); };
     }); });
   }
-  return {
+  var self = {
+    onChange: null,
     all: function(store){ return tx(store,'readonly',function(s){ return s.getAll(); }); },
     get: function(store,k){ return tx(store,'readonly',function(s){ return s.get(k); }); },
-    put: function(store,v){ return tx(store,'readwrite',function(s){ s.put(v); return v; }); },
-    del: function(store,k){ return tx(store,'readwrite',function(s){ s.delete(k); }); },
+    put: function(store,v,o){
+      var sync = !(o && o.noSync);
+      if (sync && v && (store==='stores'||store==='lists')) v.updated = Date.now();
+      if (sync && store==='kv' && v && String(v.k).indexOf('ov-')===0 && v.v) v.v.updated = Date.now();
+      return tx(store,'readwrite',function(s){ s.put(v); return v; }).then(function(r){ if (sync && self.onChange) self.onChange('put', store, v); return r; });
+    },
+    del: function(store,k,o){
+      return tx(store,'readwrite',function(s){ s.delete(k); }).then(function(r){ if (!(o && o.noSync) && self.onChange) self.onChange('del', store, k); return r; });
+    },
     byIndex: function(store, idx, v){ return tx(store,'readonly',function(s){ return s.index(idx).getAll(v); }); },
     clear: function(store){ return tx(store,'readwrite',function(s){ s.clear(); }); }
   };
+  return self;
 })();
 
 /* ---------- state ---------- */
 var S = {
   view:'list', tab:'kissa2026', otherList:'', sort:'total', pref:'', vis:'all', q:'',
-  ratings:{}, custom:[], lists:[], photoIdx:{}, pos:null, detail:null, rating:null, tl:{}, tlIndex:null, ov:{}, stations:{}, geoQueue:[], geoBusy:false, map:null, layer:null, mapFilter:'tab'
+  ratings:{}, custom:[], lists:[], photoIdx:{}, pos:null, detail:null, rating:null, tl:{}, tlIndex:null, ov:{}, stations:{}, geoQueue:[], geoBusy:false, map:null, layer:null, mapFilter:'tab', statsMode:'me'
 };
+var CL = function(){ return window.Cloud || {}; };
+function friendSum(id){ var c=CL(); return c.user && c.summary ? c.summary(id) : null; }
+function fmtAvg(x){ return x==null ? '–' : (Math.round(x*10)/10).toFixed(1); }
 var KISSA = window.KISSA_2026;
 var PREF_ORDER = window.PREF_ORDER;
 var prefIdx = function(p){ var i = PREF_ORDER.indexOf(p); return i<0?99:i; };
@@ -147,6 +159,7 @@ function visible(){
     if (k==='pref') return prefIdx(x.pref)-prefIdx(y.pref) || String(x.area).localeCompare(String(y.area),'ja') || byName(x,y);
     if (k==='date') return ((ry&&ry.date)||'').localeCompare((rx&&rx.date)||'') || byName(x,y);
     if (k==='dist'){ var dx=dist(S.pos,x), dy=dist(S.pos,y); if(dx==null&&dy==null) return byName(x,y); if(dx==null) return 1; if(dy==null) return -1; return dx-dy; }
+    if (k==='friends'){ var fx=friendSum(x.id), fy=friendSum(y.id); return ((fy&&fy.total)||-1)-((fx&&fx.total)||-1) || tot(y)-tot(x) || byName(x,y); }
     if (k==='total') return tot(y)-tot(x) || prefIdx(x.pref)-prefIdx(y.pref) || String(x.area).localeCompare(String(y.area),'ja') || byName(x,y);
     var vx = rx ? (rx[k]||0) : -1, vy = ry ? (ry[k]||0) : -1;
     return vy-vx || tot(y)-tot(x) || byName(x,y);
@@ -241,7 +254,7 @@ function tabsHTML(){
   return '<div class="tabs">'+
     [['kissa2026','喫茶'],['other','他の百名店'],['free','その他']].map(function(t){ return '<button data-tab="'+t[0]+'" class="'+(S.tab===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+
     (S.view==='list' ? '<div class="right"><select id="sortSel" aria-label="並べ替え">'+
-      [['total','合計順'],['amb','雰囲気順'],['drink','飲み物順'],['food','食事順'],['date','訪問日順'],['dist','近い順'],['pref','エリア順'],['name','店名順']].map(function(o){ return '<option value="'+o[0]+'"'+(S.sort===o[0]?' selected':'')+'>'+o[1]+' ▾</option>'; }).join('')+'</select></div>' : '')+
+      [['total','合計順'],['friends','みんなの評価順'],['amb','雰囲気順'],['drink','飲み物順'],['food','食事順'],['date','訪問日順'],['dist','近い順'],['pref','エリア順'],['name','店名順']].map(function(o){ return '<option value="'+o[0]+'"'+(S.sort===o[0]?' selected':'')+'>'+o[1]+' ▾</option>'; }).join('')+'</select></div>' : '')+
   '</div>';
 }
 function headerHTML(){
@@ -295,13 +308,13 @@ function bindHeader(){
 function cardHTML(s){
   var r=S.ratings[s.id], sc=score(r), cu=coverURL(s.id);
   return '<button class="card" data-open="'+s.id+'">'+(cu?'<img src="'+cu+'" alt="">':'<div class="ph">写真なし</div>')+'<div class="shade"></div>'+
-    '<div class="top"><span class="pill">'+esc(s.area||s.pref||'')+'</span>'+(r.date?'<span class="pill dim">'+shortDate(r.date)+'</span>':'')+(s.isNew?'<span class="pill new">初選出</span>':'')+'</div>'+
+    '<div class="top"><span class="pill">'+esc(s.area||s.pref||'')+'</span>'+(r.date?'<span class="pill dim">'+shortDate(r.date)+'</span>':'')+(s.isNew?'<span class="pill new">初選出</span>':'')+(function(){ var f=friendSum(s.id); return f?'<span class="pill fr">みんな '+fmtAvg(f.total)+' · '+f.n+'人</span>':''; })()+'</div>'+
     '<div class="bot"><div><div class="nm">'+esc(s.name)+'</div><div class="ax">'+AXES.map(function(a){ return '<span>'+a[1].replace('お店の','')+' '+(r[a[0]]>0?r[a[0]]:'–')+'</span>'; }).join('')+'</div></div>'+
     '<div class="sc">'+fmtTotal(sc.total)+'<small>/ 30'+(sc.filled!=null?' 補完':'')+'</small></div></div></button>';
 }
 function unvHTML(s){
-  var d = S.pos ? dist(S.pos,s) : null;
-  return '<button class="card unv" data-open="'+s.id+'"><div><div class="nm">'+esc(s.name)+'</div><div class="sub">'+esc(s.pref)+' · '+esc(s.area||'')+(s.closed?' · 定休 '+esc(s.closed):'')+(s.isNew?' · 初選出':'')+'</div></div><div class="dist">'+(d!=null?fmtDist(d):'')+'</div></button>';
+  var d = S.pos ? dist(S.pos,s) : null, f = friendSum(s.id);
+  return '<button class="card unv" data-open="'+s.id+'"><div><div class="nm">'+esc(s.name)+'</div><div class="sub">'+esc(s.pref)+' · '+esc(s.area||'')+(s.closed?' · 定休 '+esc(s.closed):'')+(s.isNew?' · 初選出':'')+'</div>'+(f?'<div class="frline">'+esc(f.entries.slice(0,3).map(function(e){ return e.name; }).join('、'))+(f.n>3?' ほか':'')+' が行った</div>':'')+'</div><div class="dist">'+(f?'<span class="frb">'+fmtAvg(f.total)+'</span>':'')+(d!=null?'<span>'+fmtDist(d)+'</span>':'')+'</div></button>';
 }
 function genreChips(){
   return '<p style="font-size:12px;color:var(--muted);line-height:1.7;margin-top:14px">食べログの百名店（焼肉・ラーメン・寿司など全ジャンル、地域版も）を選ぶと、その100店がそのまま入ります。百名店以外のリストも自由に作れます。</p>';
@@ -328,6 +341,7 @@ function renderDetail(){
     (sc&&sc.filled!=null?'<p style="font-size:11px;color:var(--muted);margin:8px 2px 0">未評価の軸は評価済みの平均 '+sc.filled+' で補って30点換算しています</p>':'')+
     (r&&(r.orders&&r.orders.length||r.order)?'<div class="sec">頼んだもの</div><div class="orders">'+((r.orders&&r.orders.length?r.orders:r.order.split(/[、,，]+/)).map(function(o){ return '<span class="chip">'+esc(o.trim())+'</span>'; }).join(''))+'</div>':'')+
     (r&&r.memo?'<div class="sec">メモ</div><p class="memo">'+esc(r.memo)+'</p>':'')+
+    friendsHTML(s)+
     '<div class="grid2" style="margin-top:18px"><a class="mapmini" href="'+gmaps+'" target="_blank" rel="noopener"><span class="pin"></span>'+esc(addr||(s.pref+' '+(s.area||'')))+(s.approx&&!addr?'（駅周辺）':'')+' · Googleマップで開く ↗</a>'+
     '<div class="kv">'+(s.closed?'<div><span>定休日</span><b>'+esc(s.closed)+'</b></div>':'')+'<div><span>エリア</span><b>'+esc(s.pref+(s.area?' '+s.area:''))+'</b></div>'+(s.tabelog?'<div><span>食べログ</span><b><a href="'+esc(s.tabelog)+'" target="_blank" rel="noopener">開く ↗</a></b></div>':'')+'</div></div>'+
     (ps.length?'<div class="sec">写真 '+ps.length+'</div><div class="thumbs">'+ps.map(function(p){ return '<div class="del"><img src="'+photoURL(p)+'" alt=""><button data-delph="'+p.id+'" aria-label="この写真を削除">×</button></div>'; }).join('')+'</div>':'')+
@@ -341,6 +355,33 @@ function renderDetail(){
   var uv=$('#unvisit'); if (uv) uv.onclick=function(){ confirmSheet('評価を消して未訪問に戻しますか？','写真は残ります。', function(){ DB.del('ratings',s.id).then(function(){ delete S.ratings[s.id]; render(); toast('未訪問に戻しました'); }); }); };
   $$('[data-delph]').forEach(function(b){ b.onclick=function(){ confirmSheet('この写真を削除しますか？','', function(){ DB.del('photos',b.dataset.delph).then(function(){ S.photoIdx[s.id]=(S.photoIdx[s.id]||[]).filter(function(p){ return p.id!==b.dataset.delph; }); render(); }); }); }; });
   var strip=$('#strip'), cnt=$('#cnt'); if (cnt) strip.onscroll=function(){ cnt.textContent=(Math.round(strip.scrollLeft/strip.clientWidth)+1)+' / '+ps.length; };
+}
+
+function friendsHTML(s){
+  var c=CL(); if (!c.configured) return '';
+  if (!c.user) return '<p class="note" style="margin-top:16px">設定でログインすると、グループの友だちや家族の評価もここに出ます。</p>';
+  var f=c.summary(s.id);
+  if (!f) return (c.profile&&(c.profile.groups||[]).length) ? '<div class="sec">みんなの評価</div><p class="note">グループのメンバーはまだ記録していません</p>' : '';
+  return '<div class="sec">みんなの評価 · '+f.n+'人</div>'+
+    '<div class="fr-sum"><div class="fr-big">'+fmtAvg(f.total)+'<small>/ 30 平均</small></div><div class="bars">'+AXES.map(function(a){ var v=f[a[0]]; return '<div><span>'+a[1].replace('お店の','')+'</span><i style="width:'+((v||0)*10)+'%"></i><b>'+fmtAvg(v)+'</b></div>'; }).join('')+'</div></div>'+
+    f.entries.map(function(e){
+      return '<div class="fr-e"><div class="fr-h"><b>'+esc(e.name)+'</b><span>'+esc(e.date?fmtDate(e.date):'')+'</span><span class="fr-t">'+fmtTotal(e.total)+'</span></div>'+
+        '<div class="fr-ax">'+AXES.map(function(a){ return a[1].replace('お店の','')+' '+(e[a[0]]>0?e[a[0]]:'–'); }).join(' · ')+'</div>'+
+        ((e.orders&&e.orders.length)?'<div class="orders" style="margin:6px 0 0">'+e.orders.map(function(o){ return '<span class="chip">'+esc(o)+'</span>'; }).join('')+'</div>':'')+
+        (e.memo?'<p class="memo" style="margin-top:6px">'+esc(e.memo)+'</p>':'')+'</div>';
+    }).join('');
+}
+// 友だちの記録から店を開く（自分のリストに無い店でも開けるように）
+function openShared(storeId){
+  var s=findStore(storeId); if (s) return openDetail(storeId);
+  var es=(CL().shared||{})[storeId]||[], e=es[0]; if (!e) return;
+  if (e.list && e.list.indexOf('tl:')===0){ return loadTabelogList(e.list.slice(3)).then(function(){ if (findStore(storeId)) openDetail(storeId); }).catch(function(){ toast('リストを読み込めません'); }); }
+  openSheet('<div class="eyebrow">'+esc(e.listName||'友だちの記録')+'</div><h2>'+esc(e.storeName)+'</h2><div class="meta">'+esc([e.pref,e.area,e.address].filter(Boolean).join(' · '))+'</div>'+
+    '<p class="note">'+esc(es.map(function(x){ return x.name; }).join('、'))+' が記録したお店です。自分の「その他のお店」に入れると、評価を付けたり、みんなの評価を見たりできます。</p>'+
+    '<div class="acts"><button class="btn ghost sm" id="cancel">閉じる</button><button class="btn" id="adopt">自分のリストに入れる</button></div>');
+  $('#cancel').onclick=closeSheet;
+  $('#adopt').onclick=function(){ var ns={id:storeId, name:e.storeName, pref:e.pref||'未設定', area:e.area||'', address:e.address||'', lat:e.lat, lng:e.lng, approx:!!e.approx, tabelog:e.tabelog||'', closed:'', list:'free'};
+    DB.put('stores',ns).then(function(){ S.custom.push(ns); closeSheet(); openDetail(storeId); }); };
 }
 
 /* ---------- sheets ---------- */
@@ -496,9 +537,12 @@ function openRecord(){
 function renderMap(){
   $('#hdr').innerHTML='';
   var main=$('#main');
-  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button></div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div></div><div class="map-card" id="mapCard" hidden></div>';
+  main.innerHTML='<div id="map"></div><div class="map-ui"><div class="row"><div class="seg"><button data-mf="tab" class="'+(S.mapFilter==='tab'?'on':'')+'">'+esc(S.tab==='kissa2026'?'喫茶':S.tab==='other'?(listName(S.otherList)||'他の百名店'):'その他')+'</button><button data-mf="all" class="'+(S.mapFilter==='all'?'on':'')+'">すべて</button>'+(CL().user?'<button data-mf="fr" class="'+(S.mapFilter==='fr'?'on':'')+'">友だち</button>':'')+'</div><button class="iconbtn" id="me" aria-label="現在地へ"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button></div><div class="legend" id="legend"></div></div><div class="map-card" id="mapCard" hidden></div>';
   if (typeof L==='undefined'){ main.innerHTML='<div class="empty"><b>地図を読み込めません</b>オフラインのときは地図タイルが表示できません</div>'; return; }
-  var list = S.mapFilter==='all' ? allStores() : stores();
+  if (S.mapFilter==='fr' && !CL().user) S.mapFilter='tab';
+  var fr = S.mapFilter==='fr';
+  var list = fr ? Object.keys(CL().shared||{}).map(function(id){ var s=findStore(id); if (s) return s; var e=CL().shared[id][0]; return {id:id, name:e.storeName, pref:e.pref, area:e.area, address:e.address, lat:e.lat, lng:e.lng, approx:e.approx, _shared:true}; })
+    : S.mapFilter==='all' ? allStores() : stores();
   var withPos = list.filter(function(s){ return s.lat!=null; });
   var map = L.map('map',{zoomControl:false, attributionControl:true}).setView([35.6895,139.7], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
@@ -507,23 +551,24 @@ function renderMap(){
   withPos.forEach(function(s){
     var key=s.lat.toFixed(4)+','+s.lng.toFixed(4); var k=(seen[key]=(seen[key]||0)+1); // 同じ駅の店は少しずらす
     var ang=k*2.4, rad=k>1?0.0012:0, lat=s.lat+Math.sin(ang)*rad, lng=s.lng+Math.cos(ang)*rad;
-    var r=S.ratings[s.id], sc=score(r);
-    var icon=L.divIcon({className:'', html: r?'<div class="pin-v">'+fmtTotal(sc.total)+'</div>':'<div class="pin-u"></div>', iconSize:r?[34,34]:[18,18], iconAnchor:r?[17,17]:[9,9]});
+    var r=S.ratings[s.id], sc=score(r), f=fr?friendSum(s.id):null;
+    var icon=f ? L.divIcon({className:'', html:'<div class="pin-f">'+fmtAvg(f.total)+'</div>', iconSize:[38,30], iconAnchor:[19,15]})
+      : L.divIcon({className:'', html: r?'<div class="pin-v">'+fmtTotal(sc.total)+'</div>':'<div class="pin-u"></div>', iconSize:r?[34,34]:[18,18], iconAnchor:r?[17,17]:[9,9]});
     L.marker([lat,lng],{icon:icon, title:s.name}).addTo(map).on('click',function(){ showMapCard(s); });
     bounds.push([lat,lng]);
   });
   var done=list.filter(function(s){ return S.ratings[s.id]; }).length;
-  $('#legend').innerHTML='<span><i></i>行った '+done+'</span><span><i class="o"></i>未訪問 '+(list.length-done)+'</span>'+(withPos.some(function(s){ return s.approx; })?'<span style="color:var(--muted)">ピンは駅周辺の目安</span>':'');
+  $('#legend').innerHTML= fr ? '<span><i class="f"></i>友だちが行った '+list.length+'</span><span style="color:var(--muted)">数字はみんなの平均</span>' : '<span><i></i>行った '+done+'</span><span><i class="o"></i>未訪問 '+(list.length-done)+'</span>'+(withPos.some(function(s){ return s.approx; })?'<span style="color:var(--muted)">ピンは駅周辺の目安</span>':'');
   $$('[data-mf]').forEach(function(b){ b.onclick=function(){ S.mapFilter=b.dataset.mf; renderMap(); }; });
   $('#me').onclick=function(){ locate().then(function(p){ if(!p){ toast('位置情報が使えません'); return; } map.setView([p.lat,p.lng],14); drawMe(); nearestCard(); }); };
   function drawMe(){ if(!S.pos) return; if (S.meMarker) S.meMarker.remove(); S.meMarker=L.marker([S.pos.lat,S.pos.lng],{icon:L.divIcon({className:'',html:'<div class="pin-me"></div>',iconSize:[14,14],iconAnchor:[7,7]}),interactive:false}).addTo(map); }
-  function nearestCard(){ if(!S.pos) return; var unv=withPos.filter(function(s){ return !S.ratings[s.id]; }).map(function(s){ return {s:s,d:dist(S.pos,s)}; }).sort(function(a,b){ return a.d-b.d; }); if(!unv.length) return; showMapCard(unv[0].s, unv.slice(1,4)); }
+  function nearestCard(){ if(!S.pos||fr) return; var unv=withPos.filter(function(s){ return !S.ratings[s.id]; }).map(function(s){ return {s:s,d:dist(S.pos,s)}; }).sort(function(a,b){ return a.d-b.d; }); if(!unv.length) return; showMapCard(unv[0].s, unv.slice(1,4)); }
   function showMapCard(s, others){
-    var card=$('#mapCard'); card.hidden=false; var r=S.ratings[s.id], sc=score(r), d=S.pos?dist(S.pos,s):null, cu=coverURL(s.id);
-    card.innerHTML='<div class="eyebrow" style="color:var(--muted);font-size:10px">'+(r?'行った店':(d!=null?'ここから近い未訪問':'未訪問'))+'</div><div class="r">'+(cu?'<img src="'+cu+'" alt="" style="width:56px;height:56px;border-radius:10px;object-fit:cover">':'')+'<div style="flex:1;min-width:0"><div class="nm">'+esc(s.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', s.area, s.closed?'定休 '+s.closed:''].filter(Boolean).join(' · '))+'</div></div>'+(r?'<div class="sc" style="font:26px var(--display);color:var(--amber)">'+fmtTotal(sc.total)+'</div>':'<button class="btn sm" id="mcRate">記録する</button>')+'</div>'+
+    var card=$('#mapCard'); card.hidden=false; var r=S.ratings[s.id], sc=score(r), d=S.pos?dist(S.pos,s):null, cu=coverURL(s.id), f=friendSum(s.id);
+    card.innerHTML='<div class="eyebrow" style="color:var(--muted);font-size:10px">'+(r?'行った店':(d!=null?'ここから近い未訪問':'未訪問'))+'</div><div class="r">'+(cu?'<img src="'+cu+'" alt="" style="width:56px;height:56px;border-radius:10px;object-fit:cover">':'')+'<div style="flex:1;min-width:0"><div class="nm">'+esc(s.name)+'</div><div class="sub">'+esc([d!=null?(d<3?'徒歩 '+walkMin(d)+' 分':fmtDist(d)):'', s.area, s.closed?'定休 '+s.closed:''].filter(Boolean).join(' · '))+'</div>'+(f?'<div class="frline">みんな '+fmtAvg(f.total)+' · '+esc(f.entries.map(function(e){ return e.name; }).join('、'))+'</div>':'')+'</div>'+(r?'<div class="sc" style="font:26px var(--display);color:var(--amber)">'+fmtTotal(sc.total)+'</div>':'<button class="btn sm" id="mcRate">記録する</button>')+'</div>'+
       (others&&others.length?'<div class="others">'+others.map(function(o){ return '<span>'+esc(o.s.name)+' '+(o.d<3?walkMin(o.d)+'分':fmtDist(o.d))+'</span>'; }).join(''):'')+'</div>'+
       '<div style="display:flex;gap:8px"><button class="btn ghost sm" id="mcOpen" style="flex:1">詳細を見る</button><a class="btn ghost sm" style="flex:1" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(s.name+' '+(s.address||s.area||''))+'&travelmode=walking">Googleマップで経路</a></div>';
-    $('#mcOpen').onclick=function(){ openDetail(s.id); }; var mr=$('#mcRate'); if (mr) mr.onclick=function(){ openDetail(s.id); openRate(s.id); };
+    $('#mcOpen').onclick=function(){ if (s._shared) openShared(s.id); else openDetail(s.id); }; var mr=$('#mcRate'); if (mr) mr.onclick=function(){ openDetail(s.id); openRate(s.id); };
   }
   if (S.pos){ map.setView([S.pos.lat,S.pos.lng],13); drawMe(); nearestCard(); }
   else if (bounds.length) map.fitBounds(bounds,{padding:[60,40], maxZoom:13});
@@ -532,7 +577,31 @@ function renderMap(){
 }
 
 /* ---------- stats ---------- */
+function statsSegHTML(){ return CL().configured ? '<div class="seg2" style="margin-bottom:12px"><button data-sm="me" class="'+(S.statsMode==='me'?'on':'')+'">自分</button><button data-sm="all" class="'+(S.statsMode==='all'?'on':'')+'">みんな</button></div>' : ''; }
+function bindStatsSeg(){ $$('[data-sm]').forEach(function(b){ b.onclick=function(){ S.statsMode=b.dataset.sm; render(); }; }); }
+function renderFriends(){
+  var c=CL();
+  $('#hdr').innerHTML='<div class="hdr-top"><div><div class="eyebrow">百名店ノート</div><h1>みんな</h1></div></div>';
+  var body='';
+  if (!c.user) body='<div class="empty"><b>ログインすると見られます</b>設定からログインして、グループに参加してください</div><button class="btn" id="goSet">設定を開く</button>';
+  else if (!((c.profile&&c.profile.groups)||[]).length) body='<div class="empty"><b>まだグループがありません</b>設定でグループを作って家族や友だちを招待するか、招待コードで参加してください</div><button class="btn" id="goSet">設定を開く</button>';
+  else if (!c.feed.length) body='<div class="empty"><b>メンバーの記録はまだありません</b>誰かが評価を付けるとここに流れてきます</div>';
+  else {
+    var ids=Object.keys(c.shared), rank=ids.map(function(id){ var f=c.summary(id); return {id:id, f:f, e:f.entries[0]}; }).filter(function(x){ return x.f.total!=null; }).sort(function(a,b){ return b.f.total-a.f.total || b.f.n-a.f.n; }).slice(0,10);
+    var byUser={}; c.feed.forEach(function(e){ byUser[e.uid]=byUser[e.uid]||{name:e.name,n:0,sum:0,k:0}; byUser[e.uid].n++; if (e.total!=null){ byUser[e.uid].sum+=e.total; byUser[e.uid].k++; } });
+    var users=Object.keys(byUser).map(function(u){ return byUser[u]; }).sort(function(a,b){ return b.n-a.n; }), mx=users.length?users[0].n:1;
+    body='<div class="stat" style="margin-bottom:10px"><div class="l">メンバーの訪問数</div><div class="bars" style="margin-top:10px">'+users.map(function(u){ return '<div><span>'+esc(u.name)+'</span><i style="width:'+(u.n/mx*100)+'%"></i><b>'+u.n+'</b></div>'; }).join('')+'</div></div>'+
+      '<div class="stat" style="margin-bottom:10px"><div class="l">みんなのランキング</div><div class="list-rows">'+rank.map(function(x,i){ return '<button data-sh="'+esc(x.id)+'"><span style="color:var(--amber);font-family:var(--display);font-size:18px;width:28px;display:inline-block;flex-shrink:0">'+(i+1)+'</span><span class="rk-n">'+esc(x.e.storeName)+'</span><span>'+fmtAvg(x.f.total)+' · '+x.f.n+'人</span></button>'; }).join('')+'</div></div>'+
+      '<div class="stat"><div class="l">最近の記録</div><div class="feed">'+c.feed.slice(0,40).map(function(e){
+        return '<button class="fd" data-sh="'+esc(e.storeId)+'"><div class="fd-h"><b>'+esc(e.name)+'</b><span>'+esc(e.date?fmtDate(e.date):'')+'</span><span class="fr-t">'+fmtTotal(e.total)+'</span></div><div class="fd-s">'+esc(e.storeName)+'<small>'+esc([e.area,e.listName].filter(Boolean).join(' · '))+'</small></div>'+(e.memo?'<div class="fd-m">'+esc(e.memo.length>70?e.memo.slice(0,70)+'…':e.memo)+'</div>':'')+'</button>'; }).join('')+'</div></div>';
+  }
+  $('#main').innerHTML=statsSegHTML()+body;
+  bindStatsSeg();
+  var gs=$('#goSet'); if (gs) gs.onclick=function(){ S.view='settings'; render(); };
+  $$('[data-sh]').forEach(function(b){ b.onclick=function(){ openShared(b.dataset.sh); }; });
+}
 function renderStats(){
+  if (S.statsMode==='all' && CL().configured) return renderFriends();
   $('#hdr').innerHTML='<div class="hdr-top"><div><div class="eyebrow">百名店ノート</div><h1>統計</h1></div></div>'+tabsHTML();
   var all=stores(), done=all.filter(function(s){ return S.ratings[s.id]; }), scs=done.map(function(s){ return score(S.ratings[s.id]); }).filter(function(x){ return x.total!=null; });
   var avg=function(k){ var v=done.map(function(s){ return S.ratings[s.id][k]||0; }).filter(function(x){ return x>0; }); return v.length? (v.reduce(function(a,b){ return a+b; },0)/v.length):0; };
@@ -541,12 +610,96 @@ function renderStats(){
   var prefs=Object.keys(byPref).sort(function(a,b){ return byPref[b].n-byPref[a].n; }).slice(0,8);
   var top=done.map(function(s){ return {s:s,t:score(S.ratings[s.id]).total||0}; }).sort(function(a,b){ return b.t-a.t; }).slice(0,5);
   var months={}; done.forEach(function(s){ var d=S.ratings[s.id].date||''; if(d) months[d.slice(0,7)]=(months[d.slice(0,7)]||0)+1; }); var mk=Object.keys(months).sort().slice(-6);
-  $('#main').innerHTML='<div class="stat-row"><div class="stat"><div class="l">訪問</div><div class="v">'+done.length+'<small> / '+(S.tab==='kissa2026'?100:all.length)+' 軒</small></div></div><div class="stat"><div class="l">平均合計</div><div class="v">'+(scs.length?avgT.toFixed(1):'–')+'<small> / 30</small></div></div></div>'+
+  $('#main').innerHTML=statsSegHTML()+'<div class="stat-row"><div class="stat"><div class="l">訪問</div><div class="v">'+done.length+'<small> / '+(S.tab==='kissa2026'?100:all.length)+' 軒</small></div></div><div class="stat"><div class="l">平均合計</div><div class="v">'+(scs.length?avgT.toFixed(1):'–')+'<small> / 30</small></div></div></div>'+
     '<div class="stat" style="margin-bottom:10px"><div class="l">軸ごとの平均</div><div class="bars" style="margin-top:10px">'+AXES.map(function(a){ var v=avg(a[0]); return '<div><span>'+a[1].replace('お店の','')+'</span><i style="width:'+(v*10)+'%"></i><b>'+(v?v.toFixed(1):'–')+'</b></div>'; }).join('')+'</div></div>'+
     (prefs.length?'<div class="stat" style="margin-bottom:10px"><div class="l">エリア別の進み具合</div><div class="bars" style="margin-top:10px">'+prefs.map(function(p){ var x=byPref[p]; return '<div><span>'+esc(p)+'</span><i style="width:'+(x.d/x.n*100)+'%"></i><b>'+x.d+'/'+x.n+'</b></div>'; }).join('')+'</div></div>':'')+
     (mk.length?'<div class="stat" style="margin-bottom:10px"><div class="l">月ごとの訪問数</div><div class="bars" style="margin-top:10px">'+mk.map(function(m){ var mx=Math.max.apply(null,mk.map(function(k){ return months[k]; })); return '<div><span>'+m.replace('-','/')+'</span><i style="width:'+(months[m]/mx*100)+'%"></i><b>'+months[m]+'</b></div>'; }).join('')+'</div></div>':'')+
     (top.length?'<div class="stat"><div class="l">ベスト5</div><div class="list-rows">'+top.map(function(x,i){ return '<button data-open="'+x.s.id+'"><span style="color:var(--amber);font-family:var(--display);font-size:18px;width:28px;display:inline-block">'+(i+1)+'</span>'+esc(x.s.name)+'<span>'+fmtTotal(x.t)+'</span></button>'; }).join('')+'</div></div>':'<div class="empty">評価を記録すると統計が出ます</div>');
-  bindHeader(); $$('[data-open]').forEach(function(b){ b.onclick=function(){ openDetail(b.dataset.open); }; });
+  bindHeader(); bindStatsSeg(); $$('[data-open]').forEach(function(b){ b.onclick=function(){ openDetail(b.dataset.open); }; });
+}
+
+/* ---------- account / groups ---------- */
+function accountHTML(){
+  var c=CL();
+  if (!c.configured) return '';
+  var head='<div class="stat acct" style="margin-bottom:10px"><div class="l">友だち・家族と共有</div>';
+  if (!c.ready) return head+'<p class="note">'+esc(c.status||'接続中…')+(c.error?'<br>'+esc(c.error):'')+'</p></div>';
+  if (!c.user) return head+
+    (c.pendingJoin?'<p class="note hi">招待されています。ログインか新規登録をすると、そのままグループに参加できます。</p>':'<p class="note">ログインすると、記録がクラウドにも保存されて機種変更しても残り、グループの友だちや家族と評価を見せ合えます。写真は共有されません。</p>')+
+    '<div class="seg2" id="amode"><button data-am="in" class="on">ログイン</button><button data-am="up">新規登録</button></div>'+
+    '<div class="f" id="nameRow" hidden><label for="a-name">表示名（友だちに見える名前）</label><input id="a-name" maxlength="30" autocomplete="nickname" placeholder="例：とも"></div>'+
+    '<div class="f"><label for="a-email">メールアドレス</label><input id="a-email" type="email" autocomplete="email" inputmode="email" autocapitalize="off"></div>'+
+    '<div class="f"><label for="a-pw">パスワード（6文字以上）</label><input id="a-pw" type="password" autocomplete="current-password"></div>'+
+    '<div class="err" id="a-err"></div>'+
+    '<div class="acts" style="margin-top:4px"><button class="btn" id="a-go">ログイン</button></div>'+
+    '<button class="linkbtn" id="a-reset">パスワードを忘れた</button></div>';
+  var gids=(c.profile&&c.profile.groups)||[];
+  var st = c.status || (c.error?c.error:(c.lastSync?'同期済み '+new Date(c.lastSync).toTimeString().slice(0,5):''));
+  return head+
+    '<div class="acct-me"><div><div class="nm">'+esc((c.profile&&c.profile.name)||'')+'</div><div class="sub">'+esc(c.user.email||'')+(st?' · '+esc(st):'')+'</div></div><button class="btn ghost sm" id="a-rename">名前を変える</button></div>'+
+    '<div class="sec" style="margin-top:14px">グループ</div>'+
+    (gids.length?gids.map(function(gid){ var g=c.groups[gid]||{}, names=Object.keys(g.memberNames||{}).map(function(u){ return g.memberNames[u]; });
+      return '<div class="grp"><div class="grp-h"><b>'+esc(g.name||'読み込み中…')+'</b><span>'+((g.members||[]).length||names.length)+'人</span></div>'+
+        (names.length?'<div class="grp-m">'+esc(names.join('、'))+'</div>':'')+
+        '<div class="grp-a"><button class="btn sm" data-inv="'+gid+'">招待する</button><button class="btn ghost sm" data-leave="'+gid+'">抜ける</button></div></div>'; }).join('')
+      :'<p class="note">まだグループがありません。作って招待するか、もらった招待コードで参加してください。</p>')+
+    '<div class="acts" style="margin-top:10px"><button class="btn ghost sm" id="g-new" style="flex:1">＋ グループを作る</button><button class="btn ghost sm" id="g-join" style="flex:1">招待コードで参加</button></div>'+
+    '<div class="acts" style="margin-top:10px"><button class="btn ghost sm" id="a-sync" style="flex:1">今すぐ同期</button><button class="btn ghost sm" id="a-out" style="flex:1">ログアウト</button></div></div>';
+}
+function bindAccount(){
+  var c=CL(); if (!c.configured || !c.ready) return;
+  if (!c.user){
+    var mode='in';
+    $$('[data-am]').forEach(function(b){ b.onclick=function(){ mode=b.dataset.am; $$('[data-am]').forEach(function(x){ x.classList.toggle('on', x===b); }); $('#nameRow').hidden = mode!=='up'; $('#a-go').textContent = mode==='up'?'登録してはじめる':'ログイン'; $('#a-pw').autocomplete = mode==='up'?'new-password':'current-password'; }; });
+    $('#a-go').onclick=function(){
+      var em=$('#a-email').value, pw=$('#a-pw').value, nm=($('#a-name').value||'').trim(), err=$('#a-err'); err.textContent='';
+      if (mode==='up' && !nm){ err.textContent='表示名を入れてください'; return; }
+      var b=$('#a-go'); b.disabled=true; b.textContent='確認中…';
+      (mode==='up'?c.signUp(em,pw,nm):c.signIn(em,pw)).then(function(){ toast(mode==='up'?'登録しました':'ログインしました'); })
+        .catch(function(e){ err.textContent=c.errMsg(e); b.disabled=false; b.textContent=mode==='up'?'登録してはじめる':'ログイン'; });
+    };
+    $('#a-reset').onclick=function(){ var em=$('#a-email').value.trim(), err=$('#a-err'); if(!em){ err.textContent='メールアドレスを入れてから押してください'; return; }
+      c.resetPassword(em).then(function(){ err.textContent=''; toast('再設定のメールを送りました'); }).catch(function(e){ err.textContent=c.errMsg(e); }); };
+    return;
+  }
+  $('#a-out').onclick=function(){ confirmSheet('ログアウトしますか？','この端末の記録は残ります。もう一度ログインすれば共有も再開します。', function(){ c.signOut().then(function(){ toast('ログアウトしました'); render(); }); }); };
+  $('#a-sync').onclick=function(){ toast('同期中…'); Promise.resolve(c.sync()).then(function(){ toast('同期しました'); render(); }); };
+  $('#a-rename').onclick=function(){
+    openSheet('<h2 style="font-size:22px">表示名を変える</h2><div class="meta">グループのメンバーに見える名前です</div><div class="f"><label for="rn">表示名</label><input id="rn" maxlength="30" value="'+esc((c.profile&&c.profile.name)||'')+'"></div><div class="err" id="rn-err"></div><div class="acts"><button class="btn ghost sm" id="cancel">やめる</button><button class="btn" id="ok">保存</button></div>');
+    $('#cancel').onclick=closeSheet; $('#ok').onclick=function(){ c.rename($('#rn').value).then(function(){ closeSheet(); toast('変更しました'); render(); }).catch(function(e){ $('#rn-err').textContent=c.errMsg(e); }); };
+  };
+  $('#g-new').onclick=function(){
+    openSheet('<h2 style="font-size:22px">グループを作る</h2><div class="meta">作ったあと、招待コードを家族や友だちに送ります</div><div class="f"><label for="gn">グループ名</label><input id="gn" maxlength="40" placeholder="例：家族、喫茶部"></div><div class="err" id="gn-err"></div><div class="acts"><button class="btn ghost sm" id="cancel">やめる</button><button class="btn" id="ok">作る</button></div>');
+    $('#cancel').onclick=closeSheet;
+    $('#ok').onclick=function(){ var n=$('#gn').value.trim(); if(!n){ $('#gn-err').textContent='グループ名を入れてください'; return; } $('#ok').disabled=true;
+      c.createGroup(n).then(function(gid){ toast('グループを作りました'); openInvite(gid, n); }).catch(function(e){ $('#ok').disabled=false; $('#gn-err').textContent=c.errMsg(e); }); };
+  };
+  $('#g-join').onclick=function(){ openJoin(''); };
+  $$('[data-inv]').forEach(function(b){ b.onclick=function(){ var g=c.groups[b.dataset.inv]||{}; openInvite(b.dataset.inv, g.name||''); }; });
+  $$('[data-leave]').forEach(function(b){ b.onclick=function(){ var g=c.groups[b.dataset.leave]||{};
+    confirmSheet('「'+(g.name||'グループ')+'」から抜けますか？','このグループに共有した自分の評価は消えます（自分の記録は残ります）。招待コードがあればまた参加できます。', function(){ c.leaveGroup(b.dataset.leave).then(function(){ toast('抜けました'); render(); }).catch(function(e){ toast(c.errMsg(e)); }); }); }; });
+}
+function openInvite(gid, name){
+  var c=CL(), url=c.inviteURL(gid), text='百名店ノートの「'+name+'」に招待します。\nアプリを開いてログインすると参加できます。\n'+url+'\n招待コード：'+gid;
+  openSheet('<div class="eyebrow">招待する</div><h2>'+esc(name)+'</h2><div class="meta">このリンクかコードを送ってください。受け取った人はログイン後に参加できます。</div>'+
+    '<div class="code" id="codeTxt">'+esc(gid)+'</div><div class="codeurl">'+esc(url)+'</div>'+
+    '<div class="acts"><button class="btn ghost sm" id="copy" style="flex:1">コピー</button>'+(navigator.share?'<button class="btn" id="share" style="flex:1">LINEなどで送る</button>':'')+'</div><div class="acts" style="margin-top:8px"><button class="btn ghost sm" id="cancel" style="flex:1">閉じる</button></div>');
+  $('#cancel').onclick=function(){ closeSheet(); render(); };
+  $('#copy').onclick=function(){ (navigator.clipboard?navigator.clipboard.writeText(text):Promise.reject()).then(function(){ toast('コピーしました'); }).catch(function(){ var r=document.createRange(); r.selectNode($('#codeTxt')); getSelection().removeAllRanges(); getSelection().addRange(r); toast('選択しました。長押しでコピーしてください'); }); };
+  var sh=$('#share'); if (sh) sh.onclick=function(){ navigator.share({title:'百名店ノート', text:text}).catch(function(){}); };
+}
+function openJoin(code){
+  var c=CL();
+  openSheet('<h2 style="font-size:22px">招待コードで参加</h2><div class="meta">送られてきた12文字のコード（例：ABCD-EFGH-JKLM）</div><div class="f"><label for="jc">招待コード</label><input id="jc" autocapitalize="characters" autocomplete="off" value="'+esc(code||'')+'" placeholder="ABCD-EFGH-JKLM"></div><div class="err" id="jc-err"></div><div class="acts"><button class="btn ghost sm" id="cancel">やめる</button><button class="btn" id="ok">確認する</button></div>');
+  $('#cancel').onclick=function(){ c.clearPendingJoin(); closeSheet(); };
+  $('#ok').onclick=function(){ var err=$('#jc-err'); err.textContent='';
+    c.peekGroup($('#jc').value).then(function(g){
+      if ((g.members||[]).indexOf(c.user.uid)>=0){ c.clearPendingJoin(); closeSheet(); toast('すでに参加しています'); return; }
+      openSheet('<div class="eyebrow">グループに参加</div><h2>'+esc(g.name)+'</h2><div class="meta">今 '+(g.members||[]).length+'人が参加しています</div><p class="note">参加すると、あなたの評価（点数・頼んだもの・メモ・訪問日・場所）がこのグループのメンバーに見えるようになります。写真は共有されません。</p><div class="err" id="jn-err"></div><div class="acts"><button class="btn ghost sm" id="cancel">やめる</button><button class="btn" id="ok">参加する</button></div>');
+      $('#cancel').onclick=function(){ c.clearPendingJoin(); closeSheet(); };
+      $('#ok').onclick=function(){ $('#ok').disabled=true; c.joinGroup(g.id).then(function(){ c.clearPendingJoin(); closeSheet(); toast('「'+g.name+'」に参加しました'); render(); }).catch(function(e){ $('#ok').disabled=false; $('#jn-err').textContent=c.errMsg(e); }); };
+    }).catch(function(e){ err.textContent=c.errMsg(e); });
+  };
 }
 
 /* ---------- settings / backup ---------- */
@@ -554,12 +707,13 @@ function renderSettings(){
   $('#hdr').innerHTML='<div class="hdr-top"><div><div class="eyebrow">百名店ノート</div><h1>設定</h1></div></div>';
   var nR=Object.keys(S.ratings).length, nP=Object.keys(S.photoIdx).reduce(function(a,k){ return a+S.photoIdx[k].length; },0);
   var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  $('#main').innerHTML='<div class="stat" style="margin-bottom:10px"><div class="l">データ</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">評価 '+nR+' 件 · 写真 '+nP+' 枚 · 追加した店 '+S.custom.length+' 軒<br>すべてこのiPhoneのブラウザ内に保存されています。機種変更やSafariのデータ削除で消えるので、ときどきバックアップしてください。</p></div>'+
+  $('#main').innerHTML=accountHTML()+'<div class="stat" style="margin-bottom:10px"><div class="l">データ</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">評価 '+nR+' 件 · 写真 '+nP+' 枚 · 追加した店 '+S.custom.length+' 軒<br>'+(CL().user?'ログイン中は写真以外がクラウドにも保存されます。写真はこのiPhoneの中だけなので、ときどきバックアップしてください。':'すべてこのiPhoneのブラウザ内に保存されています。機種変更やSafariのデータ削除で消えるので、ときどきバックアップしてください。')+'</p></div>'+
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.2.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: © OpenStreetMap contributors, © CARTO。住所検索: Nominatim。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: © OpenStreetMap contributors, © CARTO。住所検索: Nominatim。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn danger sm" id="wipe">すべてのデータを消す</button></div>';
+  bindAccount();
   $('#exportBtn').onclick=exportBackup;
   $('#importBtn').onclick=function(){ var inp=$('#importInput'); inp.value=''; inp.onchange=function(){ if (inp.files[0]) importBackup(inp.files[0]); }; inp.click(); };
   $('#wipe').onclick=function(){ confirmSheet('本当にすべて消しますか？','評価・写真・追加した店がすべて消えます。バックアップを先に書き出してください。', function(){ Promise.all(['ratings','stores','lists','photos','kv'].map(DB.clear)).then(function(){ location.reload(); }); }); };
@@ -600,8 +754,63 @@ function importBackup(file){
 /* ---------- boot ---------- */
 function applyOverrides(){ Object.keys(S.ov).forEach(function(id){ var s=findStore(id); if (s) Object.assign(s, S.ov[id]); }); queueGeocode(KISSA); return Promise.resolve(); }
 function boot(){ return load().then(applyOverrides).then(render); }
+
+/* ---------- cloud との接続 ---------- */
+var refreshT=null;
+function refresh(){
+  clearTimeout(refreshT);
+  refreshT=setTimeout(function(){
+    var a=document.activeElement;
+    if (!$('#sheetWrap').hidden || S.rating || (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) return;
+    if (S.view==='map' && !S.detail) return; // 地図は開き直したときに更新
+    render();
+  }, 250);
+}
+function applyRemote(coll, d){
+  var o={noSync:true}, u=d.updated||0;
+  if (coll==='ratings'){
+    var l=S.ratings[d.storeId];
+    if (d.deleted){ if (l && (l.updated||0) <= u){ delete S.ratings[d.storeId]; DB.del('ratings', d.storeId, o); return true; } return false; }
+    if (!l || (l.updated||0) < u){ S.ratings[d.storeId]=d; DB.put('ratings', d, o); return true; }
+    return false;
+  }
+  if (coll==='stores' || coll==='lists'){
+    var arr = coll==='stores' ? S.custom : S.lists, i=-1;
+    arr.forEach(function(x,j){ if (x.id===d.id) i=j; });
+    var cur = i>=0 ? arr[i] : null;
+    if (d.deleted){ if (cur && (cur.updated||0) <= u){ arr.splice(i,1); DB.del(coll, d.id, o); return true; } return false; }
+    if (!cur || (cur.updated||0) < u){ if (i>=0) arr[i]=d; else arr.push(d); DB.put(coll, d, o); if (coll==='lists' && d.kind==='tabelog') loadTabelogList(d.slug).catch(function(){}); return true; }
+    return false;
+  }
+  if (coll==='ov'){
+    var c=S.ov[d.id]; if (c && (c.updated||0) >= u) return false;
+    S.ov[d.id]=d; DB.put('kv', {k:'ov-'+d.id, v:d}, o); var st=findStore(d.id); if (st) Object.assign(st, d); return true;
+  }
+  return false;
+}
+function localAll(){
+  var out=[];
+  Object.keys(S.ratings).forEach(function(k){ out.push({coll:'ratings', v:S.ratings[k]}); });
+  S.custom.forEach(function(v){ out.push({coll:'stores', v:v}); });
+  S.lists.forEach(function(v){ out.push({coll:'lists', v:v}); });
+  Object.keys(S.ov).forEach(function(k){ out.push({coll:'ov', v:S.ov[k]}); });
+  return out;
+}
+function connectCloud(){
+  var c=window.Cloud; if (!c || !c.configured) return;
+  DB.onChange = function(op, store, v){ c.mirror(op, store, v); };
+  c.attach({
+    findStore:findStore, score:score, listName:listName, refresh:refresh, applyRemote:applyRemote, localAll:localAll,
+    localRatings:function(){ return Object.keys(S.ratings).map(function(k){ return S.ratings[k]; }); },
+    kvGet:function(k){ return DB.get('kv',k).then(function(r){ return r?r.v:null; }); },
+    kvSet:function(k,v){ return DB.put('kv',{k:k,v:v},{noSync:true}); },
+    reload:function(){ render(); },
+    onPendingJoin:function(code){ S.view='settings'; S.detail=null; render(); openJoin(code); }
+  });
+  if (c.pendingJoin){ S.view='settings'; render(); }
+}
 document.addEventListener('DOMContentLoaded', function(){
-  boot().catch(function(e){ $('#main').innerHTML='<div class="empty"><b>起動できませんでした</b>'+esc(e&&e.message||e)+'</div>'; });
+  boot().then(connectCloud).catch(function(e){ $('#main').innerHTML='<div class="empty"><b>起動できませんでした</b>'+esc(e&&e.message||e)+'</div>'; });
   $$('#nav button').forEach(function(b){ b.onclick=function(){ var v=b.dataset.view; if (v==='record'){ openRecord(); return; } S.view=v; S.detail=null; S.rating=null; window.scrollTo(0,0); render(); }; });
   $('#scrim').onclick=closeSheet;
   window.addEventListener('popstate', function(){ if (!$('#sheetWrap').hidden) closeSheet(); else if (S.rating) closeRate(); else if (S.detail) closeDetail(); });

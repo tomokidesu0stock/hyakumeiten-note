@@ -1,0 +1,74 @@
+rules_version = '2';
+// 百名店ノート — Firestore セキュリティルール
+// ・自分の記録（users/{uid}/...）は本人だけが読み書きできる
+// ・グループの評価（groups/{gid}/ratings）はそのグループのメンバーだけが読める
+// ・グループの招待コード＝ドキュメントID。コードを知っている人だけがグループを見つけて参加できる（一覧取得は不可）
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function groupDoc(gid) { return get(/databases/$(database)/documents/groups/$(gid)); }
+    function isMember(gid) { return signedIn() && me() in groupDoc(gid).data.members; }
+
+    // 自分のデータ（プロフィール・評価・追加した店・リスト・位置の上書き）
+    match /users/{uid} {
+      allow read, write: if signedIn() && me() == uid;
+      match /{sub=**} {
+        allow read, write: if signedIn() && me() == uid;
+      }
+    }
+
+    match /groups/{gid} {
+      // コードを知っていれば中身（名前・人数）を確認できる。一覧は取れない
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'owner', 'members', 'created'])
+        && request.resource.data.owner == me()
+        && request.resource.data.members == [me()]
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 40;
+
+      allow update: if signedIn() && (
+        // 参加：自分だけを members に足す
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members.toSet().difference(resource.data.members.toSet()) == [me()].toSet()
+          && resource.data.members.toSet().difference(request.resource.data.members.toSet()).size() == 0
+          && resource.data.members.size() < 50)
+        // 退出：自分だけを members から外す
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && resource.data.members.toSet().difference(request.resource.data.members.toSet()) == [me()].toSet()
+          && request.resource.data.members.toSet().difference(resource.data.members.toSet()).size() == 0)
+        // 名前の変更：作った人だけ
+        || (resource.data.owner == me()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 40)
+      );
+
+      allow delete: if signedIn() && resource.data.owner == me();
+
+      // メンバーの表示名
+      match /members/{uid} {
+        allow read: if isMember(gid);
+        allow create, update: if signedIn() && me() == uid && isMember(gid)
+          && request.resource.data.name is string && request.resource.data.name.size() <= 30;
+        allow delete: if signedIn() && me() == uid;
+      }
+
+      // グループで共有する評価（1人1店1件、ID = uid__storeId）
+      match /ratings/{rid} {
+        allow read: if isMember(gid);
+        allow create, update: if isMember(gid)
+          && rid.matches(me() + '__.+')
+          && request.resource.data.uid == me()
+          && request.resource.data.memo is string && request.resource.data.memo.size() <= 4000;
+        allow delete: if signedIn() && rid.matches(me() + '__.+');
+      }
+    }
+  }
+}

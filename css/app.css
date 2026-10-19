@@ -2,7 +2,7 @@
 :root{
   --bg:#171513; --bg2:#1d1a18; --card:#221f1c; --card2:#2a2724; --line:#2c2825; --line2:#3a3531;
   --fg:#f0ece4; --fg2:#c9c2b8; --muted:#9b948a; --dim:#6e675f;
-  --amber:#e0a458; --amber-ink:#171513; --blue:#4f8cff;
+  --amber:#e0a458; --amber-ink:#171513; --blue:#4f8cff; --friend:#8cc7a8; --friend-ink:#12201a; --friend-soft:#1d2a24; --danger:#e07a5f;
   --display:"Shippori Antique B1","Hiragino Mincho ProN",serif;
   --ui:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
@@ -199,3 +199,42 @@ body.rating .scale button{font-size:12px;border-radius:7px}
 .orders .chip{background:var(--card2);border-color:var(--line2)}
 .orders .chip.on{background:var(--amber-soft,#3a2d1a);color:var(--amber);border-color:var(--amber)}
 .orderrow{display:flex;gap:8px}.orderrow input{flex:1;min-width:0}.orderrow .btn{flex:0 0 auto;padding:0 16px;height:46px}
+
+/* 共有（ログイン・グループ・みんなの評価） */
+.note{font-size:12px;color:var(--muted);line-height:1.7;margin:8px 0}
+.note.hi{color:var(--friend)}
+.err{font-size:12px;color:var(--danger);min-height:1em;margin:-4px 0 8px}
+.linkbtn{font-size:12px;color:var(--muted);text-decoration:underline;margin-top:10px}
+.seg2{display:flex;gap:4px;background:var(--card);border-radius:999px;padding:4px;margin:10px 0 14px}
+.seg2 button{flex:1;padding:8px 10px;border-radius:999px;font-size:13px;color:var(--fg2)}
+.seg2 button.on{background:var(--amber);color:var(--amber-ink);font-weight:700}
+.acct .f input{background:var(--bg)}
+.acct-me{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px}
+.acct-me .nm{font:20px/1.2 var(--display)}.acct-me .sub{font-size:11px;color:var(--muted);margin-top:2px;word-break:break-all}
+.grp{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.grp-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.grp-h b{font:17px var(--display);font-weight:400}.grp-h span{font-size:12px;color:var(--muted)}
+.grp-m{font-size:12px;color:var(--fg2);margin-top:4px}
+.grp-a{display:flex;gap:8px;margin-top:10px}.grp-a .btn{flex:1}
+.code{font:28px/1.2 ui-monospace,Menlo,monospace;letter-spacing:.06em;text-align:center;background:var(--card);border-radius:12px;padding:16px 8px;color:var(--amber);user-select:all;-webkit-user-select:all}
+.codeurl{font-size:11px;color:var(--muted);text-align:center;margin:8px 0 4px;word-break:break-all;user-select:all;-webkit-user-select:all}
+.card .pill.fr{color:var(--friend)}
+.frline{font-size:11px;color:var(--friend);margin-top:3px}
+.card.unv .dist{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.frb{font:18px/1 var(--display);color:var(--friend)}
+.fr-sum{display:flex;gap:16px;align-items:center;background:var(--friend-soft);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.fr-big{font:36px/1 var(--display);color:var(--friend);flex-shrink:0}.fr-big small{display:block;font:10px var(--ui);color:var(--muted);letter-spacing:.08em;margin-top:4px}
+.fr-sum .bars{flex:1;min-width:0}.fr-sum .bars div{grid-template-columns:48px 1fr 30px}.fr-sum .bars i{background:var(--friend)}
+.fr-e{border-top:1px solid var(--line);padding:12px 2px}
+.fr-h{display:flex;align-items:baseline;gap:8px}.fr-h b{font-size:14px}.fr-h span{font-size:11px;color:var(--muted)}
+.fr-t{margin-left:auto;font:22px/1 var(--display)!important;color:var(--friend)!important}
+.fr-ax{font-size:11px;color:var(--fg2);margin-top:2px}
+.feed{display:flex;flex-direction:column}
+.fd{text-align:left;border-top:1px solid var(--line);padding:12px 0;width:100%}
+.fd:first-child{border-top:0}
+.fd-h{display:flex;align-items:baseline;gap:8px}.fd-h b{font-size:13px}.fd-h span{font-size:11px;color:var(--muted)}
+.fd-s{font:16px/1.3 var(--display);margin-top:2px}.fd-s small{font:11px var(--ui);color:var(--muted);margin-left:8px}
+.fd-m{font-size:12px;color:var(--fg2);margin-top:4px;line-height:1.6}
+.rk-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.pin-f{min-width:38px;height:30px;padding:0 6px;border-radius:15px;background:var(--friend);color:var(--friend-ink);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;font:14px var(--display);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.map-ui .legend i.f{background:var(--friend)}
+.map-ui .seg button{white-space:nowrap}
