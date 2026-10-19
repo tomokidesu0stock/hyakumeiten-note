@@ -735,12 +735,21 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.2</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
-    '<div class="acts" style="margin-top:18px"><button class="btn danger sm" id="wipe">すべてのデータを消す</button></div>';
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.3.3</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: 国土地理院（地理院タイル）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
+    '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();
   $('#exportBtn').onclick=exportBackup;
   $('#importBtn').onclick=function(){ var inp=$('#importInput'); inp.value=''; inp.onchange=function(){ if (inp.files[0]) importBackup(inp.files[0]); }; inp.click(); };
+  $('#forceUpdate').onclick=forceUpdate;
   $('#wipe').onclick=function(){ confirmSheet('本当にすべて消しますか？','評価・写真・追加した店がすべて消えます。バックアップを先に書き出してください。', function(){ Promise.all(['ratings','stores','lists','photos','kv'].map(DB.clear)).then(function(){ location.reload(); }); }); };
+}
+function forceUpdate(){
+  toast('更新しています…');
+  var jobs=[];
+  if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){ return Promise.all(rs.map(function(r){ return r.unregister(); })); }));
+  if (window.caches) jobs.push(caches.keys().then(function(ks){ return Promise.all(ks.filter(function(k){ return k.indexOf('tiles')<0; }).map(function(k){ return caches.delete(k); })); }));
+  Promise.all(jobs).catch(function(){}).then(function(){ location.replace(location.pathname + '?v=' + Date.now()); });
 }
 function exportBackup(){
   if (typeof JSZip==='undefined'){ toast('オフラインでは書き出せません'); return; }
@@ -838,6 +847,14 @@ document.addEventListener('DOMContentLoaded', function(){
   $$('#nav button').forEach(function(b){ b.onclick=function(){ var v=b.dataset.view; if (v==='record'){ openRecord(); return; } S.view=v; S.detail=null; S.rating=null; window.scrollTo(0,0); render(); }; });
   $('#scrim').onclick=closeSheet;
   window.addEventListener('popstate', function(){ if (!$('#sheetWrap').hidden) closeSheet(); else if (S.rating) closeRate(); else if (S.detail) closeDetail(); });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+  if ('serviceWorker' in navigator){
+    // 新しい版が入ったら一度だけ自動で読み直す（初回インストール時は読み直さない）
+    var hadController = !!navigator.serviceWorker.controller, reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){ if (!hadController || reloaded) return; reloaded = true; location.reload(); });
+    navigator.serviceWorker.register('sw.js', {updateViaCache:'none'}).then(function(reg){
+      reg.update().catch(function(){});
+      document.addEventListener('visibilitychange', function(){ if (document.visibilityState==='visible') reg.update().catch(function(){}); });
+    }).catch(function(){});
+  }
 });
 })();
