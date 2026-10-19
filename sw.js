@@ -1,6 +1,6 @@
 /* 百名店ノート service worker
    アプリ本体は「ネット優先・つながらないときだけ保存済みを使う」。更新が必ず届くようにする。 */
-var VERSION = 'v1.6.0';
+var VERSION = 'v1.6.1';
 var SHELL = ['./', './index.html', './css/app.css', './js/app.js', './js/data.js', './js/cloud.js', './js/osm.js', './data/osm/index.json', './data/osm/hyakumeiten-pos.json','./data/osm/stations.json', './js/firebase-config.js',
   './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css','./vendor/maplibre/maplibre-gl.js','./vendor/maplibre/maplibre-gl.css','./vendor/maplibre/leaflet-maplibre-gl.js', './vendor/jszip/jszip.min.js',
   './manifest.webmanifest', './data/lists/index.json', './icons/icon-192.png', './icons/icon-512.png'];

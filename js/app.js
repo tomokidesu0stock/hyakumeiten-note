@@ -751,8 +751,7 @@ function addBaseMap(map){
   Promise.all([loadVectorLib(), getStyle()]).then(function(r){
     clearTimeout(timer);
     if (S.map!==map || map._base) return;
-    map._base=L.maplibreGL({style:r[1]}).addTo(map);
-    map.attributionControl.addAttribution('<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>');
+    map._base=L.maplibreGL({style:r[1]}).addTo(map);  // 出典（OpenFreeMap・OpenMapTiles・OSM）はスタイルから自動で表示される
   }).catch(function(){ clearTimeout(timer); fallback(); });
 }
 
@@ -891,7 +890,7 @@ function renderSettings(){
     '<div class="acts" style="margin-top:0"><button class="btn" id="exportBtn">バックアップを書き出す（zip）</button></div><div class="acts" style="margin-top:10px"><button class="btn ghost" id="importBtn">バックアップを読み込む</button></div>'+
     '<p style="font-size:11px;color:var(--muted);line-height:1.6">zipには data.json（評価・店・リスト）と写真が入ります。読み込みは同じIDのデータを上書きし、それ以外は残します。</p>'+
     (!standalone?'<div class="stat" style="margin-top:18px"><div class="l">ホーム画面に追加</div><p style="margin:8px 0 0;font-size:13px;color:var(--fg2);line-height:1.7">Safariの共有ボタン（□↑）→「ホーム画面に追加」で、アプリのように全画面で使えます。</p></div>':'')+
-    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.6.0</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安（関東・関西の駅はOSMの駅位置）で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: OpenFreeMap（© OpenMapTiles・© OpenStreetMap contributors、MapLibre で表示）。読めないときは国土地理院（地理院タイル）。周辺のお店（関東・関西・三重）: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
+    '<div class="stat" style="margin-top:18px"><div class="l">このアプリについて · v1.6.1</div><p style="margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.7">食べログ 百名店の選出店データ（全71リスト、2026-10-19取得）を同梱。喫茶店 百名店 2026 は食べログ発表（2026年6月23日）の選出店。店の位置は最寄り駅周辺の目安（関東・関西の駅はOSMの駅位置）で、各店の「店の情報を編集」から住所と正確な位置を入れられます。地図: OpenFreeMap（© OpenMapTiles・© OpenStreetMap contributors、MapLibre で表示）。読めないときは国土地理院（地理院タイル）。周辺のお店（関東・関西・三重）: © OpenStreetMap contributors（ODbL、OpenFreeMap・Geofabrik経由）。住所検索: Nominatim（© OpenStreetMap contributors）。</p></div>'+
     '<div class="acts" style="margin-top:18px"><button class="btn ghost sm" id="forceUpdate" style="flex:1">最新版に更新</button><button class="btn danger sm" id="wipe" style="flex:1">すべてのデータを消す</button></div>'+
     '<p class="note">「最新版に更新」はアプリの部品だけを読み込み直します。記録や写真は消えません。</p>';
   bindAccount();
